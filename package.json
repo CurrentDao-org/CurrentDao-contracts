@@ -1,24 +1,21 @@
 {
-  "devDependencies": {
-    "@types/jest": "^30.0.0",
-    "jest": "^30.3.0",
-    "ts-jest": "^29.4.6"
   "name": "currentdao-contracts",
   "version": "1.0.0",
   "description": "Smart contracts for the CurrentDao solar energy ecosystem on Stellar/Soroban.",
   "main": "index.js",
-  "type": "module",
+  "type": "commonjs",
   "directories": {
     "doc": "docs",
     "test": "tests"
   },
   "scripts": {
     "test": "jest",
+    "test:acl": "jest tests/acl/AccessControlList.test.ts",
     "test:emergency": "jest tests/emergency",
     "test:coverage": "jest --coverage",
+    "deploy:acl": "ts-node scripts/deploy_acl.ts",
     "deploy:emergency": "ts-node scripts/deploy_emergency.ts",
-    "build": "tsc",
-    "dev": "ts-node --watch"
+    "build": "tsc"
   },
   "repository": {
     "type": "git",
@@ -33,9 +30,10 @@
   "homepage": "https://github.com/Codekill33/CurrentDao-contracts#readme",
   "devDependencies": {
     "@types/jest": "^30.0.0",
+    "@types/node": "^24.6.0",
     "jest": "^30.3.0",
     "ts-jest": "^29.4.6",
     "ts-node": "^10.9.2",
-    "typescript": "^6.0.2"
+    "typescript": "^5.9.3"
   }
 }
