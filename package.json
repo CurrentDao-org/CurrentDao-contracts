@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "description": "Smart contracts for the CurrentDao solar energy ecosystem on Stellar/Soroban.",
   "main": "index.js",
-  "type": "commonjs",
   "directories": {
     "doc": "docs",
     "test": "tests"
