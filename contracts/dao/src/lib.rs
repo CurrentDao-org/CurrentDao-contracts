@@ -85,7 +85,7 @@ impl DaoContract {
         (location, description, amount, votes_for, votes_against, passed, rejected)
     }
     
-    pub fn add_member(e: Env, member: Address, voting_power: i128) {
+    pub fn add_member(e: Env, _member: Address, voting_power: i128) {
         // Get admin
         let admin: Address = e.storage().instance().get(&0u32).unwrap();
         admin.require_auth();

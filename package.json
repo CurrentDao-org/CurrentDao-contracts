@@ -8,7 +8,13 @@
     "test": "tests"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest",
+    "test:fee-management-system": "jest tests/fees",
+    "test:security-system": "jest tests/security",
+    "test:upgrade-management-system": "jest tests/amm",
+    "test:amm": "jest tests/amm",
+    "test:liquidity": "jest tests/liquidity",
+    "test:zkp": "jest tests/zkp"
   },
   "repository": {
     "type": "git",
@@ -27,6 +33,6 @@
     "jest": "^30.3.0",
     "ts-jest": "^29.4.6",
     "ts-node": "^10.9.2",
-    "typescript": "^6.0.2"
+    "typescript": "^5.4.5"
   }
 }
