@@ -11,7 +11,7 @@ impl EnergyToken {
         e.storage().instance().set(&0u32, &admin);
     }
 
-    pub fn mint(e: Env, to: Address, amount: i128) {
+    pub fn mint(e: Env, _to: Address, amount: i128) {
         // Check authorization from invoker
         let admin: Address = e.storage().instance().get(&0u32).unwrap();
         admin.require_auth();
@@ -27,7 +27,7 @@ impl EnergyToken {
         e.storage().instance().set(&balance_key, &(current_balance + amount));
     }
 
-    pub fn transfer(e: Env, from: Address, to: Address, amount: i128) {
+    pub fn transfer(e: Env, from: Address, _to: Address, amount: i128) {
         from.require_auth();
         
         // Deduct from sender - use different keys
@@ -44,7 +44,7 @@ impl EnergyToken {
         e.storage().instance().set(&to_key, &(to_balance + amount));
     }
 
-    pub fn balance(e: Env, addr: Address) -> i128 {
+    pub fn balance(e: Env, _addr: Address) -> i128 {
         let key = 5u32;
         e.storage().instance().get(&key).unwrap_or(0)
     }
