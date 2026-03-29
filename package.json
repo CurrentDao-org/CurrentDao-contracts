@@ -1,0 +1,16 @@
+{
+  "name": "currentdao-contracts",
+  "version": "1.0.0",
+  "description": "Smart contracts for CurrentDao",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "jest": "^29.0.0",
+    "ts-jest": "^29.0.0",
+    "@types/jest": "^29.0.0",
+    "typescript": "^5.0.0"
+  }
+}
