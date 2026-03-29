@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
     "module": "commonjs",
+    "target": "esnext",
     "moduleResolution": "node",
     "strict": true,
     "esModuleInterop": true,
@@ -9,7 +9,11 @@
     "forceConsistentCasingInFileNames": true,
     "outDir": "dist",
     "rootDir": ".",
-    "types": ["node", "jest"]
+    "types": ["node", "jest"],
+    "sourceMap": true,
+    "declaration": true,
+    "declarationMap": true,
+    "verbatimModuleSyntax": false
   },
   "include": ["contracts/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"],
   "exclude": ["node_modules", "dist"]

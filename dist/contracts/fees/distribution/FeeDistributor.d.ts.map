@@ -1,0 +1,1 @@
+{"version":3,"file":"FeeDistributor.d.ts","sourceRoot":"","sources":["../../../../contracts/fees/distribution/FeeDistributor.ts"],"names":[],"mappings":"AAAA,qBAAa,cAAc;IACvB,OAAO,CAAC,eAAe,CAAa;IACpC,OAAO,CAAC,kBAAkB,CAAa;IAEvC,UAAU,CAAC,MAAM,EAAE,MAAM,GAAG,IAAI;IAShC,kBAAkB,IAAI,MAAM;IAI5B,qBAAqB,IAAI,MAAM;CAGlC"}

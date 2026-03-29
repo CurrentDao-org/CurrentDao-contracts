@@ -1,0 +1,1 @@
+{"version":3,"file":"NetworkMonitor.d.ts","sourceRoot":"","sources":["../../../../contracts/fees/monitoring/NetworkMonitor.ts"],"names":[],"mappings":"AAAA,qBAAa,cAAc;IACvB,OAAO,CAAC,eAAe,CAAa;IACpC,OAAO,CAAC,UAAU,CAAsB;IAExC,gBAAgB,CAAC,KAAK,EAAE,MAAM,GAAG,IAAI;IAKrC,aAAa,IAAI,MAAM;IAIvB,aAAa,IAAI,OAAO;CAI3B"}

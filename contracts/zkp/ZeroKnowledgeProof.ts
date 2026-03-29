@@ -1,8 +1,8 @@
-import { IZeroKnowledgeProof, ITradeMetadata, IPublicSignals, IZKProof } from './interfaces/IZeroKnowledgeProof';
+import type { IZeroKnowledgeProof, ITradeMetadata, IPublicSignals, IZKProof } from './interfaces/IZeroKnowledgeProof';
 import { ProofGenerator } from './proofs/ProofGenerator';
 import { ProofVerifier } from './verification/ProofVerifier';
 import { PrivacyControls } from './privacy/PrivacyControls';
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 
 /**
  * Main facade for Zero-Knowledge Proof system in the CurrentDao ecosystem.
