@@ -1,0 +1,23 @@
+{
+  "name": "currentdao-contracts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CurrentDAO contracts TypeScript simulation suite",
+  "scripts": {
+    "test": "jest",
+    "test:multisig": "jest tests/multisig --runInBand",
+    "test:advanced-multisig": "jest tests/multisig/AdvancedMultiSig.test.ts --runInBand",
+    "coverage:advanced-multisig": "jest tests/multisig/AdvancedMultiSig.test.ts tests/multisig/MultiSigLib.test.ts --runInBand --coverage --collectCoverageFrom='contracts/multisig/AdvancedMultiSig.ts' --collectCoverageFrom='contracts/multisig/libraries/MultiSigLib.ts' --coverageThreshold='{\"global\":{\"statements\":95,\"lines\":95,\"functions\":95}}'",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.json",
+    "deploy:advanced-multisig": "ts-node scripts/deploy_advanced_multisig.ts"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/node": "^20.17.30",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.3"
+  }
+}
