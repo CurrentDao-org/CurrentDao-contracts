@@ -3,6 +3,7 @@
     "module": "commonjs",
     "target": "esnext",
     "moduleResolution": "node",
+    "baseUrl": ".",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
