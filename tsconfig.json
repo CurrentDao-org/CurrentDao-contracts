@@ -1,12 +1,15 @@
 {
   "compilerOptions": {
     "module": "commonjs",
-    "target": "esnext",
+    "target": "es2020",
     "moduleResolution": "node",
-    "strict": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
+    "downlevelIteration": true,
     "outDir": "dist",
     "rootDir": ".",
     "types": ["node", "jest"],

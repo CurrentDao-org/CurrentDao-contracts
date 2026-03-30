@@ -12,6 +12,7 @@ import {
 } from "../interfaces/IAssetWrapper";
 
 export {
+  AssetType,
   WrappedTokenInfo,
   AssetWrappedEvent,
   AssetUnwrappedEvent,

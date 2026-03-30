@@ -44,17 +44,17 @@ export class ReentrancyGuard implements IReentrancyGuard {
       throw new Error("REENTRANCY_GUARD_PAUSED: Emergency control active");
     }
 
-    this.stateProtection.lock();
     this.callStackMonitor.push(`${caller}:${target}:${selector}`);
     this.detector.enterCall(caller, target, selector);
+    this.stateProtection.lock();
 
     try {
       const result = await fn();
       return result;
     } finally {
+      this.stateProtection.unlock();
       this.detector.exitCall();
       this.callStackMonitor.pop();
-      this.stateProtection.unlock();
     }
   }
 

@@ -71,6 +71,8 @@ export class SecurityMonitor implements ISecurityMonitor {
     this.complianceEngine = new ComplianceEngine();
     this.securityThresholds = new SecurityThresholds();
     this.anomalyThresholds = new AnomalyThresholds();
+    this.transactionHistory = new Map();
+    this.callHistory = new Map();
     this.initializeMonitoring();
   }
 
@@ -109,7 +111,7 @@ export class SecurityMonitor implements ISecurityMonitor {
     );
 
     // Anomaly detection
-    const anomalyResult = this.detectAnomalies(actor, 3600000); // 1 hour window
+    const anomalyResult = await this.detectAnomalies(actor, 3600000); // 1 hour window
 
     // Compliance check
     const context = new ComplianceContext(

@@ -289,6 +289,7 @@ export class ComplianceViolation {
   severity: ComplianceSeverity;
   description: string;
   evidence: string;
+  timestamp: number;
 
   constructor(
     regulation: string,
@@ -302,6 +303,47 @@ export class ComplianceViolation {
     this.severity = severity;
     this.description = description;
     this.evidence = evidence;
+    this.timestamp = Date.now();
+  }
+}
+
+export class KYCRecord {
+  address: string;
+  level: number;
+  status: string;
+  verified: boolean;
+  expired: boolean;
+  expiryDate: number;
+  data: string;
+  revoked: boolean;
+  revocationReason: string;
+  revocationDate: number;
+
+  constructor(address: string, level: number, verified: boolean = false) {
+    this.address = address;
+    this.level = level;
+    this.status = "PENDING";
+    this.verified = verified;
+    this.expired = false;
+    this.expiryDate = 0;
+    this.data = "";
+    this.revoked = false;
+    this.revocationReason = "";
+    this.revocationDate = 0;
+  }
+}
+
+export class AMLRecord {
+  address: string;
+  riskScore: number;
+  lastChecked: number;
+  status: string;
+
+  constructor(address: string, riskScore: number = 0) {
+    this.address = address;
+    this.riskScore = riskScore;
+    this.lastChecked = Date.now();
+    this.status = "CLEAN";
   }
 }
 

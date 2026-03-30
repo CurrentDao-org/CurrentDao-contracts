@@ -1,4 +1,4 @@
-import { EnergyCertificate } from '../contracts/nft/EnergyCertificate';
+import { EnergyCertificate } from '../EnergyCertificate';
 
 async function main() {
     console.log("Starting Energy Certificate Deployment...");

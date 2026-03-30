@@ -43,7 +43,7 @@ describe("ReentrancyGuard", () => {
 
   it("should track depth and throw if exceeded", async () => {
     const deepCall = async (current: number): Promise<string> => {
-      if (current > 5) return "done";
+      if (current > 6) return "done";
       return await guard.protect(
         async () => await deepCall(current + 1),
         `0x${current}`, `0x${current + 1}`, "call()"

@@ -471,6 +471,3 @@ export async function deployRatingSystem(network: string = 'development'): Promi
     
     return contract;
 }
-
-// Export for use in other scripts
-export { QualityRatingDeployer };

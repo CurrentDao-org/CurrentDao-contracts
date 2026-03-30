@@ -1,1 +1,0 @@
-{"version":3,"file":"FeeOptimizer.d.ts","sourceRoot":"","sources":["../../../../contracts/fees/optimization/FeeOptimizer.ts"],"names":[],"mappings":"AAEA,qBAAa,YAAY;IACrB,MAAM,CAAC,QAAQ,CAAC,MAAM,EAAE,MAAM,EAAE,UAAU,EAAE,MAAM,EAAE,YAAY,EAAE,MAAM,GAAG,MAAM;CAOpF"}

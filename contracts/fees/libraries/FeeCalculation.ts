@@ -3,7 +3,7 @@ import { FeeType, FeeStructure, FeeTier, FeeExemption, FeeCalculationContext } f
 export interface FeeCalculationResult {
     totalFee: number;
     baseFee: number;
-    dynamicAdjustment: number;
+    dynamicAdjustmentAmount: number;
     volumeDiscount: number;
     exemptionDiscount: number;
     effectiveRate: number; // In basis points
@@ -32,8 +32,8 @@ export class FeeCalculation {
         structure: FeeStructure,
         context: FeeCalculationContext
     ): FeeCalculationResult {
-        const baseResult = this.calculateBaseFee(structure, context.amount);
-        const dynamicAdjustment = this.calculateDynamicAdjustment(structure, context);
+        const baseResult = this.calculateBaseFee(structure, context);
+        const dynamicAdjustmentValue = this.calculateDynamicAdjustment(structure, context);
         const volumeDiscount = this.calculateVolumeDiscount(structure, context);
         const exemptionDiscount = this.calculateExemptionDiscount(structure, context);
 
@@ -41,13 +41,13 @@ export class FeeCalculation {
         const adjustments: Array<{ type: 'DYNAMIC' | 'VOLUME' | 'EXEMPTION'; amount: number; description: string }> = [];
 
         // Apply dynamic adjustment
-        if (dynamicAdjustment !== 0) {
-            const adjustmentAmount = totalFee * (dynamicAdjustment / this.BASIS_POINTS);
+        if (dynamicAdjustmentValue !== 0) {
+            const adjustmentAmount = totalFee * (dynamicAdjustmentValue / this.BASIS_POINTS);
             totalFee += adjustmentAmount;
             adjustments.push({
                 type: 'DYNAMIC',
                 amount: adjustmentAmount,
-                description: `Network congestion adjustment: ${dynamicAdjustment / 100}%`
+                description: `Network congestion adjustment: ${dynamicAdjustmentValue / 100}%`
             });
         }
 
@@ -97,7 +97,7 @@ export class FeeCalculation {
         return {
             totalFee,
             baseFee: baseResult.fixed + baseResult.percentage,
-            dynamicAdjustment,
+            dynamicAdjustmentAmount: dynamicAdjustmentValue,
             volumeDiscount,
             exemptionDiscount,
             effectiveRate,
@@ -114,7 +114,9 @@ export class FeeCalculation {
     /**
      * Calculate base fee without any adjustments
      */
-    private static calculateBaseFee(structure: FeeStructure, amount: number): { fixed: number; percentage: number } {
+    private static calculateBaseFee(structure: FeeStructure, context: FeeCalculationContext): { fixed: number; percentage: number } {
+        const { amount, userTier } = context;
+
         switch (structure.feeType) {
             case FeeType.FIXED:
                 return { fixed: structure.baseFee, percentage: 0 };
@@ -123,6 +125,18 @@ export class FeeCalculation {
                 return { fixed: 0, percentage: (amount * structure.percentageFee) / this.BASIS_POINTS };
 
             case FeeType.TIERED:
+                // For transactions under $100, use fixed fee
+                if (amount < 100) {
+                    return { fixed: structure.baseFee, percentage: 0 };
+                }
+
+                // If user has a specific tier assigned, use it
+                if (userTier) {
+                    const discountMultiplier = (this.BASIS_POINTS - userTier.discountPercentage) / this.BASIS_POINTS;
+                    const basePercentage = (amount * structure.percentageFee) / this.BASIS_POINTS;
+                    return { fixed: 0, percentage: basePercentage * discountMultiplier };
+                }
+
                 return this.calculateTieredFee(structure, amount);
 
             case FeeType.HYBRID:
@@ -164,21 +178,24 @@ export class FeeCalculation {
      * Calculate dynamic adjustment based on network congestion
      */
     private static calculateDynamicAdjustment(structure: FeeStructure, context: FeeCalculationContext): number {
-        if (!structure.dynamicAdjustment.enabled) {
+        if (!structure.dynamicAdjustment.enabled || context.networkCongestion === 0) {
             return 0;
         }
 
         const congestionLevel = context.networkCongestion / 100; // Convert to 0-1 scale
         const multiplier = structure.dynamicAdjustment.congestionMultiplier;
         
-        // Calculate adjustment based on congestion
-        let adjustment = congestionLevel * (multiplier - 1) * this.BASIS_POINTS;
+        // Use percentageFee if available, otherwise fallback to baseFee for fixed fee scenarios
+        const referenceFee = structure.percentageFee > 0 ? structure.percentageFee : (structure.baseFee > 0 ? (structure.baseFee / context.amount) * this.BASIS_POINTS : 0);
         
-        // Clamp to min/max rates
-        const minRate = structure.dynamicAdjustment.minRate;
+        // Calculate adjustment based on congestion - ensure it's positive
+        let adjustment = congestionLevel * multiplier * referenceFee;
+        
+        // Clamp to max rate
         const maxRate = structure.dynamicAdjustment.maxRate;
+        const maxAdjustment = Math.max(0, maxRate - structure.percentageFee);
         
-        adjustment = Math.max(minRate - structure.percentageFee, Math.min(maxRate - structure.percentageFee, adjustment));
+        adjustment = Math.min(maxAdjustment, adjustment);
         
         return Math.round(adjustment);
     }

@@ -1,1 +1,0 @@
-{"version":3,"file":"FeeSwitchLib.d.ts","sourceRoot":"","sources":["../../../../contracts/fees/libraries/FeeSwitchLib.ts"],"names":[],"mappings":"AAAA,qBAAa,YAAY;IACrB,MAAM,CAAC,gBAAgB,CAAC,MAAM,EAAE,MAAM,GAAG,MAAM;IAM/C,MAAM,CAAC,yBAAyB,CAAC,OAAO,EAAE,MAAM,EAAE,UAAU,EAAE,MAAM,GAAG,MAAM;IAK7E,MAAM,CAAC,iBAAiB,CAAC,GAAG,EAAE,MAAM,EAAE,aAAa,EAAE,MAAM,GAAG,MAAM;CAKvE"}

@@ -1,16 +1,62 @@
 {
   "name": "currentdao-contracts",
   "version": "1.0.0",
-  "description": "Smart contracts for CurrentDao",
+  "description": "Smart contracts for the CurrentDao solar energy ecosystem on Stellar/Soroban.",
   "main": "index.js",
-  "scripts": {
-    "test": "jest"
+  "type": "commonjs",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
   },
-  "dependencies": {},
+  "scripts": {
+    "test": "npx jest",
+    "test:fee-management-system": "npx jest tests/fees",
+    "test:security-system": "npx jest tests/security",
+    "test:upgrade-management-system": "npx jest tests/amm",
+    "test:amm": "npx jest tests/amm",
+    "test:liquidity": "npx jest tests/liquidity",
+    "test:zkp": "npx jest tests/zkp",
+    "test:acl": "npx jest tests/acl/AccessControlList.test.ts",
+    "test:emergency": "npx jest tests/emergency",
+    "test:fees": "npx jest tests/fees/FeeManager.test.ts",
+    "test:security": "npx jest tests/security/SecurityMonitor.test.ts",
+    "test:security:integration": "npx jest tests/security/SecurityIntegration.test.ts",
+    "test:analytics": "npx jest tests/analytics/UsageAnalytics.test.ts",
+    "test:upgrade": "npx jest tests/upgrade/UpgradeManager.test.ts",
+    "test:rating": "npx jest tests/rating/QualityRating.test.ts",
+    "test:coverage": "npx jest --coverage",
+    "lint": "echo 'Linting not configured yet'",
+    "deploy:acl": "ts-node scripts/deploy_acl.ts",
+    "deploy:emergency": "ts-node scripts/deploy_emergency.ts",
+    "deploy:fees": "ts-node scripts/deploy_fees.ts",
+    "deploy:security:dev": "ts-node scripts/deploy_security_monitor.ts development",
+    "deploy:security:testnet": "ts-node scripts/deploy_security_monitor.ts testnet",
+    "deploy:security:mainnet": "ts-node scripts/deploy_security_monitor.ts mainnet",
+    "deploy:analytics": "ts-node scripts/deploy_usage_analytics.ts",
+    "deploy:upgrade": "ts-node scripts/deploy_upgrade.ts",
+    "deploy:rating:dev": "ts-node -e \"import { deployRatingSystem } from './scripts/deploy_rating'; deployRatingSystem('development').then(console.log).catch(console.error);\"",
+    "deploy:rating:testnet": "ts-node -e \"import { deployRatingSystem } from './scripts/deploy_rating'; deployRatingSystem('testnet').then(console.log).catch(console.error);\"",
+    "deploy:rating:mainnet": "ts-node -e \"import { deployRatingSystem } from './scripts/deploy_rating'; deployRatingSystem('mainnet').then(console.log).catch(console.error);\"",
+    "build": "npx tsc",
+    "verify:fees": "ts-node -e \"const { FeeSystemDeployer } = require('./scripts/deploy_fees'); const deployer = new FeeSystemDeployer({network: 'development', owner: '0xowner', treasury: '0xtreasury', validators: '0xvalidators', developers: '0xdevelopers', enableDynamicFees: true, initialNetworkCongestion: 20}); deployer.verifyDeployment({feeManager: new (require('./contracts/fees/FeeManager').FeeManager)('0xowner'), config: deployer.config, deploymentHash: 'test', timestamp: Date.now(), gasUsed: 0}).then(console.log);\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Codekill33/CurrentDao-contracts.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Codekill33/CurrentDao-contracts/issues"
+  },
+  "homepage": "https://github.com/Codekill33/CurrentDao-contracts#readme",
   "devDependencies": {
-    "jest": "^29.0.0",
-    "ts-jest": "^29.0.0",
-    "@types/jest": "^29.0.0",
-    "typescript": "^5.0.0"
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.6.0",
+    "jest": "^30.3.0",
+    "ts-jest": "^29.4.6",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
   }
 }

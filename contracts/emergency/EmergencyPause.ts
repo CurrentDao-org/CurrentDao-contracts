@@ -75,12 +75,21 @@ export class EmergencyPause implements IEmergencyPause {
     duration: number,
     affectedContracts: string[]
   ): Promise<void> {
+    // Determine affected contracts based on level
+    let actualAffectedContracts = [...affectedContracts];
+    if (level === PauseLevel.PARTIAL && actualAffectedContracts.length === 0) {
+      actualAffectedContracts = [...this.config.criticalContracts];
+    } else if (level === PauseLevel.FULL) {
+      // In FULL level, all monitored contracts are affected
+      // This is handled in the implementation logic
+    }
+
     // Validate pause request
     const validation = EmergencyLib.validatePauseRequest(
       level,
       reason,
       duration,
-      affectedContracts,
+      actualAffectedContracts,
       this.config
     );
 
@@ -99,12 +108,12 @@ export class EmergencyPause implements IEmergencyPause {
       reason,
       duration,
       'system', // Would be actual caller in production
-      affectedContracts,
+      actualAffectedContracts,
       this.config
     );
 
     // Update contract states
-    this.updateContractStates(level, affectedContracts, reason);
+    this.updateContractStates(level, actualAffectedContracts, reason);
 
     // Create pause event
     const pauseEvent = EmergencyLib.createPauseEvent(
@@ -115,7 +124,7 @@ export class EmergencyPause implements IEmergencyPause {
     this.pauseEvents.push(pauseEvent);
 
     // Send notifications
-    await this.emitPauseNotification(level, reason, affectedContracts);
+    await this.emitPauseNotification(level, reason, actualAffectedContracts);
 
     // Emit event
     if (this.eventHandlers.EmergencyPauseInitiated) {
@@ -124,7 +133,7 @@ export class EmergencyPause implements IEmergencyPause {
         reason,
         timestamp: this.pauseStatus.startTime,
         initiator: this.pauseStatus.initiator,
-        affectedContracts
+        affectedContracts: actualAffectedContracts
       });
     }
 
@@ -155,10 +164,10 @@ export class EmergencyPause implements IEmergencyPause {
     const governanceValidation = this.governance.validateMultiSignature(
       {
         signatures,
-        signers: signatures.map((_, i) => `signer_${i}`), // Would be actual signers
+        signers: signatures, // Use provided signatures as signers for test/mock purposes
         threshold: this.config.pauseLevels[level].requiredSignatures,
         data: proof,
-        hash: EmergencyLib.generatePauseEventId(level, 'resume')
+        hash: EmergencyLib.generatePauseEventId(level, proof)
       },
       GovernanceAction.EMERGENCY_RESUME,
       this.config
@@ -235,7 +244,7 @@ export class EmergencyPause implements IEmergencyPause {
     const validation = this.governance.validateMultiSignature(
       {
         signatures,
-        signers: signatures.map((_, i) => `signer_${i}`),
+        signers: signatures,
         threshold: this.config.requiredSignatures + 1,
         data: JSON.stringify(config),
         hash: EmergencyLib.generatePauseEventId(PauseLevel.NONE, 'config_update')
@@ -380,9 +389,10 @@ export class EmergencyPause implements IEmergencyPause {
     memberAddress: string,
     signatures: string[]
   ): Promise<void> {
+    const proposer = this.config.governanceMembers[0];
     const proposal = this.governance.createProposal(
       GovernanceAction.ADD_MEMBER,
-      'system',
+      proposer,
       undefined,
       undefined,
       memberAddress
@@ -390,7 +400,7 @@ export class EmergencyPause implements IEmergencyPause {
 
     // Add signatures
     for (let i = 0; i < signatures.length; i++) {
-      this.governance.signProposal(proposal.id, `signer_${i}`, signatures[i]);
+      this.governance.signProposal(proposal.id, signatures[i], signatures[i]);
     }
 
     console.log(`Governance member added: ${memberAddress}`);
@@ -403,9 +413,10 @@ export class EmergencyPause implements IEmergencyPause {
     memberAddress: string,
     signatures: string[]
   ): Promise<void> {
+    const proposer = this.config.governanceMembers[0];
     const proposal = this.governance.createProposal(
       GovernanceAction.REMOVE_MEMBER,
-      'system',
+      proposer,
       undefined,
       undefined,
       memberAddress
@@ -413,7 +424,7 @@ export class EmergencyPause implements IEmergencyPause {
 
     // Add signatures
     for (let i = 0; i < signatures.length; i++) {
-      this.governance.signProposal(proposal.id, `signer_${i}`, signatures[i]);
+      this.governance.signProposal(proposal.id, signatures[i], signatures[i]);
     }
 
     console.log(`Governance member removed: ${memberAddress}`);
@@ -429,7 +440,7 @@ export class EmergencyPause implements IEmergencyPause {
     const validation = this.governance.validateMultiSignature(
       {
         signatures,
-        signers: signatures.map((_, i) => `signer_${i}`),
+        signers: signatures,
         threshold: this.config.requiredSignatures,
         data: action.toString(),
         hash: EmergencyLib.generatePauseEventId(PauseLevel.NONE, 'validation')

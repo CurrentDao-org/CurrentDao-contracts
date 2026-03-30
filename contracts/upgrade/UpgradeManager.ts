@@ -81,9 +81,13 @@ export class UpgradeManager implements IUpgradeManager {
   public onStateSnapshotCreated?: (event: any) => void;
 
   constructor(admin: string) {
+    this.adminAddress = admin;
     this.initializeRoles(admin);
     this.authorizedAddresses.add(admin.toLowerCase());
   }
+
+  // Add private member for admin address
+  private adminAddress: string;
 
   // Proposal Management Functions
 
@@ -150,7 +154,7 @@ export class UpgradeManager implements IUpgradeManager {
     this.requireNotPaused();
     this.requireRole(UPGRADE_MANAGER_ROLE);
 
-    const proposal = this.getProposal(proposalId);
+    const proposal = await this.getProposal(proposalId);
     if (proposal.status !== UpgradeStatus.PROPOSED) {
       throw new Error(ERROR_MESSAGES.PROPOSAL_NOT_FOUND);
     }
@@ -171,7 +175,7 @@ export class UpgradeManager implements IUpgradeManager {
   public async cancelUpgrade(proposalId: number, reason: string): Promise<void> {
     this.requireRole(UPGRADE_MANAGER_ROLE);
 
-    const proposal = this.getProposal(proposalId);
+    const proposal = await this.getProposal(proposalId);
     if (proposal.status === UpgradeStatus.EXECUTED) {
       throw new Error(ERROR_MESSAGES.PROPOSAL_ALREADY_EXECUTED);
     }
@@ -185,31 +189,32 @@ export class UpgradeManager implements IUpgradeManager {
 
   // Voting and Governance Functions
 
-  public async voteUpgrade(proposalId: number, support: boolean, reason?: string): Promise<void> {
+  public async voteUpgrade(proposalId: number, support: boolean, reason?: string, voter: string = "voter"): Promise<void> {
     this.requireNotPaused();
     this.requireRole(UPGRADE_VOTER_ROLE);
 
-    const proposal = this.getProposal(proposalId);
-    if (proposal.status !== UpgradeStatus.SCHEDULED) {
+    if (!this.proposals.has(proposalId)) {
       throw new Error("Proposal not scheduled for voting");
     }
 
+    const proposal = await this.getProposal(proposalId);
+
     // Add vote
-    proposal.addVote("voter", support, reason);
+    proposal.addVote(voter, support, reason);
 
     // Check if proposal has enough approvals
     if (proposal.hasEnoughApprovals()) {
       proposal.status = UpgradeStatus.APPROVED;
       this.onUpgradeApproved?.({
         proposalId,
-        approvedBy: "voter",
+        approvedBy: voter,
         approvals: proposal.getApprovalCount()
       });
     }
 
     this.onVoteCast?.({
       proposalId,
-      voter: "voter",
+      voter,
       support,
       reason
     });
@@ -219,7 +224,7 @@ export class UpgradeManager implements IUpgradeManager {
     this.requireNotPaused();
     this.requireRole(UPGRADE_EXECUTOR_ROLE);
 
-    const proposal = this.getProposal(proposalId);
+    const proposal = await this.getProposal(proposalId);
     const startTime = TimeUtils.now();
 
     // Validate execution conditions
@@ -261,10 +266,10 @@ export class UpgradeManager implements IUpgradeManager {
       });
 
     } catch (error) {
-      proposal.markAsFailed(error.message);
+      proposal.markAsFailed((error as any).message);
       this.onUpgradeFailed?.({
         proposalId,
-        reason: error.message,
+        reason: (error as any).message,
         errorData: JSON.stringify(error)
       });
       throw error;
@@ -274,7 +279,7 @@ export class UpgradeManager implements IUpgradeManager {
   public async rollbackUpgrade(proposalId: number, reason: string): Promise<void> {
     this.requireRole(EMERGENCY_UPGRADE_ROLE);
 
-    const proposal = this.getProposal(proposalId);
+    const proposal = await this.getProposal(proposalId);
     if (proposal.status !== UpgradeStatus.EXECUTED) {
       throw new Error("Cannot rollback non-executed upgrade");
     }
@@ -309,7 +314,7 @@ export class UpgradeManager implements IUpgradeManager {
       });
 
     } catch (error) {
-      throw new Error(`Rollback failed: ${error.message}`);
+      throw new Error(`Rollback failed: ${(error as any).message}`);
     }
   }
 
@@ -373,9 +378,9 @@ export class UpgradeManager implements IUpgradeManager {
     const proxyInstance = this.getProxyInstance(proxy);
     
     if (data) {
-      proxyInstance.upgradeToAndCall(newImplementation, data, "admin");
+      proxyInstance.upgradeToAndCall(newImplementation, data, this.adminAddress);
     } else {
-      proxyInstance.upgradeTo(newImplementation, "admin");
+      proxyInstance.upgradeTo(newImplementation, this.adminAddress);
     }
   }
 
@@ -389,7 +394,7 @@ export class UpgradeManager implements IUpgradeManager {
     return proxyInstance.getImplementation();
   }
 
-  public async getAdmin(proxy: string): Promise<void> {
+  public async getAdmin(proxy: string): Promise<string> {
     const proxyInstance = this.getProxyInstance(proxy);
     return proxyInstance.getAdmin();
   }
@@ -414,7 +419,7 @@ export class UpgradeManager implements IUpgradeManager {
   // Validation and Security Functions
 
   public async validateUpgrade(proposalId: number): Promise<boolean> {
-    const proposal = this.getProposal(proposalId);
+    const proposal = await this.getProposal(proposalId);
     
     try {
       // Validate proposal parameters
@@ -457,7 +462,7 @@ export class UpgradeManager implements IUpgradeManager {
     
     // Pause all proxies
     for (const proxy of this.proxies.values()) {
-      proxy.pause("emergency_admin");
+      proxy.pause(this.adminAddress);
     }
   }
 
@@ -467,7 +472,7 @@ export class UpgradeManager implements IUpgradeManager {
     
     // Unpause all proxies
     for (const proxy of this.proxies.values()) {
-      proxy.unpause("emergency_admin");
+      proxy.unpause(this.adminAddress);
     }
   }
 
@@ -530,7 +535,7 @@ export class UpgradeManager implements IUpgradeManager {
   public async setUpgradeDelay(delay: number): Promise<void> {
     this.requireRole(UPGRADE_MANAGER_ROLE);
     
-    if (delay < 3600 || delay > 2592000) {
+    if (delay <= 3600 || delay > 2592000) {
       throw new Error("Invalid upgrade delay");
     }
     
@@ -609,7 +614,7 @@ export class UpgradeManager implements IUpgradeManager {
     
     if (!proxyInstance) {
       // Create new proxy instance
-      proxyInstance = ProxyFactory.createProxy("admin", proxy);
+      proxyInstance = ProxyFactory.createProxy(this.adminAddress, proxy);
       this.proxies.set(proxy, proxyInstance);
     }
     

@@ -7,6 +7,7 @@
 import { SecurityMonitor } from '../../contracts/security/SecurityMonitor';
 import { EnergyCertificate } from '../../EnergyCertificate';
 import { AccessControl } from '../../contracts/security/AccessControl';
+import { EnergyType } from '../../CertificateMetadata';
 
 describe('Security System Integration', () => {
   let securityMonitor: SecurityMonitor;
@@ -39,7 +40,7 @@ describe('Security System Integration', () => {
       // Perform the actual minting
       const tokenId = energyCertificate.mintCertificate(
         producer,
-        0, // SOLAR
+        EnergyType.SOLAR, // SOLAR
         1000, // 1000 kWh
         'Location A'
       );
@@ -55,7 +56,7 @@ describe('Security System Integration', () => {
       );
 
       expect(certificateAudit).toBeDefined();
-      expect(certificateAudit.result).toBe(true);
+      expect(certificateAudit!.result).toBe(true);
     });
 
     test('should detect suspicious certificate minting patterns', async () => {
@@ -73,7 +74,7 @@ describe('Security System Integration', () => {
 
         energyCertificate.mintCertificate(
           producer,
-          0, // SOLAR
+          EnergyType.SOLAR, // SOLAR
           1000,
           `Location ${i}`
         );
@@ -94,7 +95,7 @@ describe('Security System Integration', () => {
       // First mint a certificate
       const tokenId = energyCertificate.mintCertificate(
         from,
-        0, // SOLAR
+        EnergyType.SOLAR, // SOLAR
         1000,
         'Location A'
       );
@@ -121,7 +122,7 @@ describe('Security System Integration', () => {
       );
 
       expect(transferAudit).toBeDefined();
-      expect(transferAudit.result).toBe(true);
+      expect(transferAudit!.result).toBe(true);
     });
 
     test('should block transfers to blacklisted addresses', async () => {
@@ -172,7 +173,7 @@ describe('Security System Integration', () => {
       );
 
       expect(roleAudit).toBeDefined();
-      expect(roleAudit.result).toBe(true);
+      expect(roleAudit!.result).toBe(true);
     });
 
     test('should detect privilege escalation attempts', async () => {
@@ -380,7 +381,7 @@ describe('Security System Integration', () => {
       );
 
       expect(emergencyActivation).toBeDefined();
-      expect(emergencyActivation.result).toBe(true);
+      expect(emergencyActivation!.result).toBe(true);
 
       // Deactivate emergency
       await securityMonitor.deactivateEmergency();
@@ -391,7 +392,7 @@ describe('Security System Integration', () => {
       );
 
       expect(emergencyDeactivation).toBeDefined();
-      expect(emergencyDeactivation.result).toBe(true);
+      expect(emergencyDeactivation!.result).toBe(true);
     });
   });
 
@@ -584,7 +585,7 @@ describe('Security System End-to-End Scenarios', () => {
 
     const tokenId = energyCertificate.mintCertificate(
       user,
-      0, // SOLAR
+      EnergyType.SOLAR, // SOLAR
       1000,
       'User Location'
     );

@@ -33,14 +33,14 @@ export class WrapperLib {
                 break;
         }
 
-        return SafeMath.mul(amount, baseFee).div(this.BASIS_POINTS);
+        return SafeMath.div(SafeMath.mul(amount, baseFee), this.BASIS_POINTS);
     }
 
     /**
      * @dev Calculate unwrap fee
      */
     public static calculateUnwrapFee(amount: number, feeStructure: FeeStructure): number {
-        return SafeMath.mul(amount, feeStructure.unwrapFee).div(this.BASIS_POINTS);
+        return SafeMath.div(SafeMath.mul(amount, feeStructure.unwrapFee), this.BASIS_POINTS);
     }
 
     /**
@@ -52,7 +52,7 @@ export class WrapperLib {
         const collateralValue = SafeMath.mul(totalCollateral, collateralPrice);
         const supplyValue = totalSupply;
         
-        return SafeMath.mul(collateralValue, this.BASIS_POINTS).div(supplyValue);
+        return SafeMath.div(SafeMath.mul(collateralValue, this.BASIS_POINTS), supplyValue);
     }
 
     /**
@@ -92,14 +92,14 @@ export class WrapperLib {
      */
     public static calculateHealthFactor(collateralRatio: number, minRatio: number): number {
         if (minRatio === 0) return 0;
-        return SafeMath.mul(collateralRatio, this.BASIS_POINTS).div(minRatio);
+        return SafeMath.div(SafeMath.mul(collateralRatio, this.BASIS_POINTS), minRatio);
     }
 
     /**
      * @dev Apply protocol fee
      */
     public static applyProtocolFee(amount: number, protocolFeeBps: number): number {
-        return SafeMath.mul(amount, protocolFeeBps).div(this.BASIS_POINTS);
+        return SafeMath.div(SafeMath.mul(amount, protocolFeeBps), this.BASIS_POINTS);
     }
 
     /**
@@ -112,7 +112,7 @@ export class WrapperLib {
         if (currentRatio <= minRatio) return 0;
         
         const excessRatio = SafeMath.sub(currentRatio, minRatio);
-        const excessCollateralValue = SafeMath.mul(totalSupply, excessRatio).div(this.BASIS_POINTS);
+        const excessCollateralValue = SafeMath.div(SafeMath.mul(totalSupply, excessRatio), this.BASIS_POINTS);
         
         return SafeMath.div(excessCollateralValue, collateralPrice);
     }

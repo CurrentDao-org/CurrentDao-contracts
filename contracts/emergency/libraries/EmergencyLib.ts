@@ -51,7 +51,7 @@ export class EmergencyLib {
     // Validate duration
     const levelConfig = config.pauseLevels[level];
     if (duration > levelConfig.maxDuration) {
-      errors.push(`Duration exceeds maximum for level ${level}: ${levelConfig.maxDuration} seconds`);
+      errors.push('Duration exceeds maximum');
     }
     if (duration < 0) {
       errors.push('Duration cannot be negative');
@@ -462,7 +462,7 @@ export class EmergencyLib {
     return typeof address === 'string' && 
            address.length > 0 && 
            address.length <= 42 &&
-           /^0x[a-fA-F0-9]*$/.test(address);
+           /^0x[a-fA-F0-9]+$/.test(address);
   }
 
   /**

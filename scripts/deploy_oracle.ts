@@ -126,6 +126,20 @@ const PRODUCTION_DEVIATION_THRESHOLDS = [
     }
 ];
 
+// Fallback configurations for verification and summary
+const ORACLE_CONFIGS: any[] = [];
+const DEVIATION_THRESHOLDS: any[] = [];
+
+/**
+ * Placeholder for mainnet deployment
+ */
+async function deployToMainnet(): Promise<void> {
+    console.log("🚀 Deploying to mainnet...");
+    // Override config for mainnet if needed
+    DEPLOYMENT_CONFIG.network = "mainnet";
+    await deployPriceOracle();
+}
+
 /**
  * Main deployment function with production enhancements
  */

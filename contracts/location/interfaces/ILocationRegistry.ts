@@ -16,7 +16,8 @@ import {
     DistanceCalculation,
     LocationEvent,
     VerificationMethod,
-    ZoneRestrictions
+    ZoneRestrictions,
+    PrivacyZone
 } from '../structures/LocationStructure';
 
 export interface ILocationRegistry {

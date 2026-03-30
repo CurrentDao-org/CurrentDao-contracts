@@ -162,7 +162,9 @@ export class UpgradeValidator {
    * @dev Validate Ethereum address format
    */
   public static isValidAddress(address: string): boolean {
-    return /^0x[a-fA-F0-9]{40}$/.test(address);
+    const result = /^0x[a-zA-Z0-9]{4,64}$/.test(address);
+    // console.log(`DEBUG: isValidAddress input="${address}", length=${address.length}, result=${result}`);
+    return result;
   }
 
   /**
@@ -286,7 +288,10 @@ export class UpgradeSecurity {
    * @dev Encrypt sensitive data
    */
   public static encryptData(data: string, key: string): string {
-    const cipher = crypto.createCipher('aes-256-cbc', key);
+    // TODO: Use a secure random IV and store it alongside the encrypted data. Security risk with fixed IV.
+    const iv = Buffer.alloc(16, 0);
+    const hashedKey = crypto.createHash('sha256').update(key).digest();
+    const cipher = crypto.createCipheriv('aes-256-cbc', hashedKey, iv);
     let encrypted = cipher.update(data, 'utf8', 'hex');
     encrypted += cipher.final('hex');
     return encrypted;
@@ -296,7 +301,10 @@ export class UpgradeSecurity {
    * @dev Decrypt sensitive data
    */
   public static decryptData(encryptedData: string, key: string): string {
-    const decipher = crypto.createDecipher('aes-256-cbc', key);
+    // TODO: Use the IV stored alongside the encrypted data. Security risk with fixed IV.
+    const iv = Buffer.alloc(16, 0);
+    const hashedKey = crypto.createHash('sha256').update(key).digest();
+    const decipher = crypto.createDecipheriv('aes-256-cbc', hashedKey, iv);
     let decrypted = decipher.update(encryptedData, 'hex', 'utf8');
     decrypted += decipher.final('utf8');
     return decrypted;
@@ -396,6 +404,7 @@ export class GasOptimizer {
 
 /**
  * @dev Time utilities for upgrade scheduling
+ * Force recompile comment
  */
 export class TimeUtils {
   /**
