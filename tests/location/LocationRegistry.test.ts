@@ -480,7 +480,7 @@ describe('LocationRegistry', () => {
 
     describe('Pricing Zones', () => {
         it('should create a pricing zone', async () => {
-            await locationRegistry.addVerifier(testVerifier);
+            await locationRegistry.addVerifier(testVerifier, 'admin');
 
             const pricingZoneId = await locationRegistry.createPricingZone(
                 'Test Pricing Zone',

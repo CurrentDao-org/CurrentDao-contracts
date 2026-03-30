@@ -45,7 +45,8 @@ export class SecurityLib {
     if (value > thresholds.maxTransactionValue) {
       riskLevel = SecuritySeverity.HIGH;
       reasons.push(`Transaction value ${value} exceeds threshold ${thresholds.maxTransactionValue}`);
-      actions.push('REQUIRE_ADDITIONAL_VERIFICATION');
+      actions.push('REQUIRE_ADDITIONAL_VERIFICATION', 'BLOCK_TRANSACTION');
+      allowed = false;
     }
 
     // Check gas limit

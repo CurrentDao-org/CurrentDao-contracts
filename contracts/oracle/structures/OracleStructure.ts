@@ -9,14 +9,14 @@ export type Map<K, V> = { [key: string]: V };
 export type Set<T> = { [key: string]: boolean };
 
 export class OracleRegistry {
-    oracles: Map<Address, Oracle>;
-    activeOracles: Set<Address>;
-    assetOracles: Map<Address, Vec<Address>>;
+    oracles: globalThis.Map<Address, Oracle>;
+    activeOracles: globalThis.Map<Address, boolean>;
+    assetOracles: globalThis.Map<Address, Vec<Address>>;
     
     constructor() {
-        this.oracles = {} as Map<Address, Oracle>;
-        this.activeOracles = {} as Set<Address>;
-        this.assetOracles = {} as Map<Address, Vec<Address>>;
+        this.oracles = new globalThis.Map<Address, Oracle>();
+        this.activeOracles = new globalThis.Map<Address, boolean>();
+        this.assetOracles = new globalThis.Map<Address, Vec<Address>>();
     }
 }
 

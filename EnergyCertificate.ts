@@ -1,6 +1,6 @@
-import { IERC721 } from './interfaces/IERC721';
-import { CertificateMetadata, EnergyType } from './structures/CertificateMetadata';
-import { CertificateLib } from './libraries/CertificateLib';
+import { IERC721 } from './IERC721';
+import { CertificateMetadata, EnergyType } from './CertificateMetadata';
+import { CertificateLib } from './CertificateLib';
 
 export class EnergyCertificate implements IERC721 {
     private owners: Map<string, string> = new Map();

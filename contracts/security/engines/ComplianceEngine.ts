@@ -14,8 +14,14 @@ import {
   ComplianceActionType,
   ReportingPeriod,
   ComplianceSeverity,
-  ComplianceAction
+  ComplianceAction,
+  ComplianceCondition,
+  KYCRecord,
+  AMLRecord,
+  ComplianceStatistics
 } from '../interfaces/ISecurityMonitor';
+
+export { KYCRecord, AMLRecord };
 
 export class ComplianceEngine {
   private complianceRules: Map<string, ComplianceRule> = new Map();
@@ -287,8 +293,8 @@ export class ComplianceEngine {
       'Enforces daily transaction limits',
       'AML',
       [
-        new ComplianceCondition('transaction_value', '<=', 10000),
-        new ComplianceCondition('daily_volume', '<=', 50000)
+        new ComplianceCondition('transaction_value', '<=', 10000, 'Transaction value limit'),
+        new ComplianceCondition('daily_volume', '<=', 50000, 'Daily volume limit')
       ],
       [
         new ComplianceAction(ComplianceActionType.REQUIRE_ADDITIONAL_VERIFICATION, 'Require verification for large transactions'),
@@ -302,8 +308,8 @@ export class ComplianceEngine {
       'Requires KYC verification for certain activities',
       'KYC',
       [
-        new ComplianceCondition('kyc_level', '>=', 1),
-        new ComplianceCondition('kyc_verified', '==', true)
+        new ComplianceCondition('kyc_level', '>=', 1, 'Minimum KYC level'),
+        new ComplianceCondition('kyc_verified', '==', true, 'KYC verification status')
       ],
       [
         new ComplianceAction(ComplianceActionType.BLOCK_TRANSACTION, 'Block transactions without KYC'),
@@ -317,7 +323,7 @@ export class ComplianceEngine {
       'Screens against sanctions lists',
       'SANCTIONS',
       [
-        new ComplianceCondition('sanctions_status', '==', 'CLEAN')
+        new ComplianceCondition('sanctions_status', '==', 'CLEAN', 'Sanctions screening status')
       ],
       [
         new ComplianceAction(ComplianceActionType.BLOCK_TRANSACTION, 'Block sanctioned addresses'),
@@ -331,7 +337,7 @@ export class ComplianceEngine {
       'Enforces geographic restrictions',
       'GEOGRAPHIC',
       [
-        new ComplianceCondition('jurisdiction', 'NOT_IN', ['RESTRICTED_COUNTRY_1', 'RESTRICTED_COUNTRY_2'])
+        new ComplianceCondition('jurisdiction', 'NOT_IN', ['RESTRICTED_COUNTRY_1', 'RESTRICTED_COUNTRY_2'], 'Geographic restriction check')
       ],
       [
         new ComplianceAction(ComplianceActionType.BLOCK_TRANSACTION, 'Block restricted jurisdictions')
@@ -677,66 +683,5 @@ export class ComplianceEngine {
   private getTotalPenaltiesApplied(): number {
     // Implementation would sum all penalties
     return Math.random() * 10000; // Mock implementation
-  }
-}
-
-// Supporting classes
-export class KYCRecord {
-  address: string;
-  level: number;
-  verified: boolean;
-  status: string;
-  expiryDate: number;
-  documentType: string;
-  issuedDate: number;
-  revoked: boolean;
-  revocationReason?: string;
-  revocationDate?: number;
-
-  constructor(address: string, level: number = 1, verified: boolean = false) {
-    this.address = address;
-    this.level = level;
-    this.verified = verified;
-    this.status = verified ? 'VERIFIED' : 'PENDING';
-    this.expiryDate = Date.now() + (365 * 24 * 60 * 60 * 1000); // 1 year
-    this.documentType = 'PASSPORT';
-    this.issuedDate = Date.now();
-    this.revoked = false;
-  }
-}
-
-export class AMLRecord {
-  address: string;
-  riskScore: number;
-  lastUpdated: number;
-  transactionCount: number;
-  totalVolume: number;
-  suspiciousActivityCount: number;
-  flagged: boolean;
-
-  constructor(address: string) {
-    this.address = address;
-    this.riskScore = 0.1; // Default low risk
-    this.lastUpdated = Date.now();
-    this.transactionCount = 0;
-    this.totalVolume = 0;
-    this.suspiciousActivityCount = 0;
-    this.flagged = false;
-  }
-}
-
-export class ComplianceStatistics {
-  totalChecks: number;
-  violations: number;
-  complianceRate: number;
-  penaltiesApplied: number;
-  reportsGenerated: number;
-
-  constructor() {
-    this.totalChecks = 0;
-    this.violations = 0;
-    this.complianceRate = 0;
-    this.penaltiesApplied = 0;
-    this.reportsGenerated = 0;
   }
 }

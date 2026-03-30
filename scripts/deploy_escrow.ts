@@ -33,6 +33,7 @@ export class EnergyEscrowDeployer {
   private networkConfigs: Map<string, Partial<DeploymentConfig>>;
 
   constructor(config: DeploymentConfig) {
+    this.networkConfigs = new Map();
     this.validateConfig(config);
     this.config = config;
     this.setupNetworkConfigs();

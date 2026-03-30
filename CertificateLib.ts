@@ -1,4 +1,4 @@
-import { CertificateMetadata, EnergyType } from '../structures/CertificateMetadata';
+import { CertificateMetadata, EnergyType } from './CertificateMetadata';
 import crypto from 'crypto';
 
 export class CertificateLib {

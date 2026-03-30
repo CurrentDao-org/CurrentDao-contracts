@@ -6,8 +6,15 @@
 
 import { SecurityMonitor } from '../contracts/security/SecurityMonitor';
 import { ComplianceEngine } from '../contracts/security/engines/ComplianceEngine';
-import { SecurityThresholds, ComplianceRule, ReportingPeriod } from '../contracts/security/interfaces/ISecurityMonitor';
-import { KYCRecord, AMLRecord } from '../contracts/security/engines/ComplianceEngine';
+import { 
+  SecurityThresholds, 
+  ComplianceRule, 
+  ReportingPeriod, 
+  ComplianceActionType,
+  ComplianceAction,
+  ComplianceCondition
+} from '../contracts/security/interfaces/ISecurityMonitor';
+import { KYCRecord, AMLRecord } from '../contracts/security/interfaces/ISecurityMonitor';
 
 export interface SecurityMonitorDeploymentConfig {
   network: 'development' | 'testnet' | 'mainnet';
@@ -45,7 +52,7 @@ export interface VerificationCheck {
 
 export class SecurityMonitorDeployer {
   private config: SecurityMonitorDeploymentConfig;
-  private securityMonitor: SecurityMonitor;
+  private securityMonitor!: SecurityMonitor;
   private deploymentHash: string;
   private deploymentTimestamp: number;
 
@@ -247,7 +254,7 @@ export class SecurityMonitorDeployer {
       results.push({
         name: 'Security Monitor Deployment',
         passed: false,
-        details: `Error: ${error.message}`
+        details: `Error: ${(error as any).message}`
       });
     }
 
@@ -263,7 +270,7 @@ export class SecurityMonitorDeployer {
       results.push({
         name: 'Compliance Engine Functionality',
         passed: false,
-        details: `Error: ${error.message}`
+        details: `Error: ${(error as any).message}`
       });
     }
 
@@ -279,7 +286,7 @@ export class SecurityMonitorDeployer {
       results.push({
         name: 'Anomaly Detection System',
         passed: false,
-        details: `Error: ${error.message}`
+        details: `Error: ${(error as any).message}`
       });
     }
 
@@ -295,7 +302,7 @@ export class SecurityMonitorDeployer {
       results.push({
         name: 'Emergency Controls',
         passed: false,
-        details: `Error: ${error.message}`
+        details: `Error: ${(error as any).message}`
       });
     }
 
@@ -319,7 +326,7 @@ export class SecurityMonitorDeployer {
       results.push({
         name: 'Configuration Applied',
         passed: false,
-        details: `Error: ${error.message}`
+        details: `Error: ${(error as any).message}`
       });
     }
 
@@ -383,12 +390,12 @@ export class SecurityMonitorDeployer {
         'Enforces daily transaction limits to prevent money laundering',
         'AML',
         [
-          { type: 'daily_volume', operator: '<=', value: 10000, description: 'Daily transaction volume limit' },
-          { type: 'transaction_count', operator: '<=', value: 50, description: 'Daily transaction count limit' }
+          new ComplianceCondition('daily_volume', '<=', 10000, 'Daily transaction volume limit'),
+          new ComplianceCondition('transaction_count', '<=', 50, 'Daily transaction count limit')
         ],
         [
-          { type: 'REQUIRE_ADDITIONAL_VERIFICATION', description: 'Require verification for large transactions' },
-          { type: 'REPORT_TO_AUTHORITY', description: 'Report suspicious patterns to authorities' }
+          new ComplianceAction(ComplianceActionType.REQUIRE_ADDITIONAL_VERIFICATION, 'Require verification for large transactions'),
+          new ComplianceAction(ComplianceActionType.REPORT_TO_AUTHORITY, 'Report suspicious patterns to authorities')
         ]
       ),
 
@@ -398,12 +405,12 @@ export class SecurityMonitorDeployer {
         'Requires KYC verification for all participants',
         'KYC',
         [
-          { type: 'kyc_verified', operator: '==', value: true, description: 'KYC must be verified' },
-          { type: 'kyc_level', operator: '>=', value: 1, description: 'Minimum KYC level required' }
+          new ComplianceCondition('kyc_verified', '==', true, 'KYC must be verified'),
+          new ComplianceCondition('kyc_level', '>=', 1, 'Minimum KYC level required')
         ],
         [
-          { type: 'BLOCK_TRANSACTION', description: 'Block transactions without KYC' },
-          { type: 'REQUIRE_ADDITIONAL_VERIFICATION', description: 'Require KYC completion' }
+          new ComplianceAction(ComplianceActionType.BLOCK_TRANSACTION, 'Block transactions without KYC'),
+          new ComplianceAction(ComplianceActionType.REQUIRE_ADDITIONAL_VERIFICATION, 'Require KYC completion')
         ]
       ),
 
@@ -413,11 +420,11 @@ export class SecurityMonitorDeployer {
         'Screens all addresses against international sanctions lists',
         'SANCTIONS',
         [
-          { type: 'sanctions_status', operator: '==', value: 'CLEAN', description: 'Address must not be sanctioned' }
+          new ComplianceCondition('sanctions_status', '==', 'CLEAN', 'Address must not be sanctioned')
         ],
         [
-          { type: 'BLOCK_TRANSACTION', description: 'Block sanctioned addresses' },
-          { type: 'REPORT_TO_AUTHORITY', description: 'Report sanctioned activity' }
+          new ComplianceAction(ComplianceActionType.BLOCK_TRANSACTION, 'Block sanctioned addresses'),
+          new ComplianceAction(ComplianceActionType.REPORT_TO_AUTHORITY, 'Report sanctioned activity')
         ]
       ),
 
@@ -427,12 +434,12 @@ export class SecurityMonitorDeployer {
         'Detects and blocks suspicious transaction patterns',
         'PATTERN',
         [
-          { type: 'rapid_transactions', operator: '<=', value: 10, description: 'Limit rapid transactions' },
-          { type: 'round_amounts', operator: '<=', value: 0.8, description: 'Limit round number transactions' }
+          new ComplianceCondition('rapid_transactions', '<=', 10, 'Limit rapid transactions'),
+          new ComplianceCondition('round_amounts', '<=', 0.8, 'Limit round number transactions')
         ],
         [
-          { type: 'REQUIRE_ADDITIONAL_VERIFICATION', description: 'Verify suspicious patterns' },
-          { type: 'NOTIFY_ADMIN', description: 'Notify administrators' }
+          new ComplianceAction(ComplianceActionType.REQUIRE_ADDITIONAL_VERIFICATION, 'Verify suspicious patterns'),
+          new ComplianceAction(ComplianceActionType.NOTIFY_ADMIN, 'Notify administrators')
         ]
       )
     ];
@@ -452,11 +459,11 @@ export class SecurityMonitorDeployer {
             'US SEC compliance requirements',
             'US',
             [
-              { type: 'accredited_investor', operator: '==', value: true, description: 'Must be accredited investor' },
-              { type: 'annual_income', operator: '>=', value: 200000, description: 'Minimum income requirement' }
+              new ComplianceCondition('accredited_investor', '==', true, 'Must be accredited investor'),
+              new ComplianceCondition('annual_income', '>=', 200000, 'Minimum income requirement')
             ],
             [
-              { type: 'REQUIRE_ADDITIONAL_VERIFICATION', description: 'Verify investor status' }
+              new ComplianceAction(ComplianceActionType.REQUIRE_ADDITIONAL_VERIFICATION, 'Verify investor status')
             ]
           )
         );
@@ -469,11 +476,11 @@ export class SecurityMonitorDeployer {
             'EU MiFID II compliance requirements',
             'EU',
             [
-              { type: 'risk_assessment', operator: '==', value: true, description: 'Risk assessment required' },
-              { type: 'suitability_test', operator: '==', value: true, description: 'Suitability test required' }
+              new ComplianceCondition('risk_assessment', '==', true, 'Risk assessment required'),
+              new ComplianceCondition('suitability_test', '==', true, 'Suitability test required')
             ],
             [
-              { type: 'REQUIRE_ADDITIONAL_VERIFICATION', description: 'Complete risk assessment' }
+              new ComplianceAction(ComplianceActionType.REQUIRE_ADDITIONAL_VERIFICATION, 'Complete risk assessment')
             ]
           )
         );
@@ -486,10 +493,10 @@ export class SecurityMonitorDeployer {
             'UK FCA compliance requirements',
             'UK',
             [
-              { type: 'fca_registered', operator: '==', value: true, description: 'FCA registration required' }
+              new ComplianceCondition('fca_registered', '==', true, 'FCA registration required')
             ],
             [
-              { type: 'REQUIRE_ADDITIONAL_VERIFICATION', description: 'Verify FCA registration' }
+              new ComplianceAction(ComplianceActionType.REQUIRE_ADDITIONAL_VERIFICATION, 'Verify FCA registration')
             ]
           )
         );
@@ -610,7 +617,7 @@ export class SecurityMonitorDeploymentCLI {
     const args = process.argv.slice(2);
     const network = args[0] || 'development';
     
-    if (!SECURITY_MONITOR_CONFIGS[network]) {
+    if (!SECURITY_MONITOR_CONFIGS[network as keyof typeof SECURITY_MONITOR_CONFIGS]) {
       console.error(`❌ Unknown network: ${network}`);
       console.log('Available networks: development, testnet, mainnet');
       process.exit(1);
@@ -619,7 +626,7 @@ export class SecurityMonitorDeploymentCLI {
     console.log(`🚀 Deploying Security Monitor System to ${network}...`);
     
     try {
-      const result = await deploySecurityMonitorSystem(SECURITY_MONITOR_CONFIGS[network]);
+      const result = await deploySecurityMonitorSystem(SECURITY_MONITOR_CONFIGS[network as keyof typeof SECURITY_MONITOR_CONFIGS]);
       
       if (result.success) {
         console.log('✅ Deployment successful!');
@@ -644,9 +651,6 @@ export class SecurityMonitorDeploymentCLI {
     }
   }
 }
-
-// Export for use in other scripts
-export { SecurityMonitorDeployer, SecurityMonitorDeploymentConfig, SecurityMonitorDeploymentResult };
 
 // Run CLI if this file is executed directly
 if (require.main === module) {

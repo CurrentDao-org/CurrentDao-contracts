@@ -455,7 +455,19 @@ describe('AnalyticsLib', () => {
     describe('Data Anonymization', () => {
         test('should partially anonymize address', () => {
             const address = '0x1234567890123456789012345678901234567890';
-            const settings = { anonymizationLevel: 'partial' as const };
+            const settings = { 
+                userAddress: "0x123", 
+                dataCollection: true, 
+                dataRetention: 30, 
+                sharingConsent: true, 
+                thirdPartySharing: false, 
+                analyticsOptIn: true, 
+                marketingOptIn: false, 
+                anonymizationLevel: 'partial' as const,
+                analyticsOptOut: false,
+                createdAt: Date.now(),
+                updatedAt: Date.now()
+            };
             
             const anonymized = AnalyticsLib.anonymizeAddress(address, settings);
             
@@ -466,7 +478,19 @@ describe('AnalyticsLib', () => {
 
         test('should fully anonymize address', () => {
             const address = '0x1234567890123456789012345678901234567890';
-            const settings = { anonymizationLevel: 'full' as const };
+            const settings = { 
+                userAddress: "0x123", 
+                dataCollection: true, 
+                dataRetention: 30, 
+                sharingConsent: true, 
+                thirdPartySharing: false, 
+                analyticsOptIn: true, 
+                marketingOptIn: false, 
+                anonymizationLevel: 'full' as const,
+                analyticsOptOut: false,
+                createdAt: Date.now(),
+                updatedAt: Date.now()
+            };
             
             const anonymized = AnalyticsLib.anonymizeAddress(address, settings);
             
@@ -477,7 +501,19 @@ describe('AnalyticsLib', () => {
 
         test('should not anonymize when level is none', () => {
             const address = '0x1234567890123456789012345678901234567890';
-            const settings = { anonymizationLevel: 'none' as const };
+            const settings = { 
+                userAddress: "0x123", 
+                dataCollection: true, 
+                dataRetention: 30, 
+                sharingConsent: true, 
+                thirdPartySharing: false, 
+                analyticsOptIn: true, 
+                marketingOptIn: false, 
+                anonymizationLevel: 'none' as const,
+                analyticsOptOut: false,
+                createdAt: Date.now(),
+                updatedAt: Date.now()
+            };
             
             const anonymized = AnalyticsLib.anonymizeAddress(address, settings);
             

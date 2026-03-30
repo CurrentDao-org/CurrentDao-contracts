@@ -22,6 +22,14 @@ export interface UpgradeProposal {
   rollbackData?: string;
   executionTime?: number;
   gasUsed?: number;
+  addVote(voter: string, support: boolean, reason?: string): void;
+  getApprovalCount(): number;
+  hasEnoughApprovals(): boolean;
+  isExecutionWindowActive(): boolean;
+  markAsExecuted(gasUsed: number, executionTime: number): void;
+  markAsFailed(reason: string): void;
+  cancel(): void;
+  rollback(): void;
 }
 
 export interface Vote {
@@ -36,6 +44,7 @@ export interface MigrationPlan {
   estimatedGas: number;
   timeout: number;
   requiresPause: boolean;
+  getExecutionOrder(): MigrationStep[];
 }
 
 export interface MigrationStep {
@@ -45,6 +54,7 @@ export interface MigrationStep {
   action: MigrationAction;
   data: string;
   dependencies: number[];
+  markAsExecuted(gasUsed: number, executionTime: number): void;
 }
 
 export enum MigrationAction {
@@ -100,6 +110,7 @@ export interface StateSnapshot {
   storageHash: string;
   data: string;
   checksum: string;
+  verify(): boolean;
 }
 
 // Events
@@ -174,7 +185,7 @@ export interface IUpgradeManager {
   cancelUpgrade(proposalId: number, reason: string): Promise<void>;
 
   // Voting and Governance
-  voteUpgrade(proposalId: number, support: boolean, reason?: string): Promise<void>;
+  voteUpgrade(proposalId: number, support: boolean, voter?: string, reason?: string): Promise<void>;
   executeUpgrade(proposalId: number): Promise<void>;
   rollbackUpgrade(proposalId: number, reason: string): Promise<void>;
 
@@ -187,7 +198,7 @@ export interface IUpgradeManager {
   upgradeProxy(proxy: string, newImplementation: string, data?: string): Promise<void>;
   getProxyInfo(proxy: string): Promise<ProxyInfo>;
   getImplementation(proxy: string): Promise<string>;
-  getAdmin(proxy: string): Promise<void>;
+  getAdmin(proxy: string): Promise<string>;
 
   // Analytics and Monitoring
   getUpgradeAnalytics(): Promise<UpgradeAnalytics>;

@@ -51,7 +51,7 @@ export class EmergencyLib {
     // Validate duration
     const levelConfig = config.pauseLevels[level];
     if (duration > levelConfig.maxDuration) {
-      errors.push(`Duration exceeds maximum for level ${level}: ${levelConfig.maxDuration} seconds`);
+      errors.push('Duration exceeds maximum');
     }
     if (duration < 0) {
       errors.push('Duration cannot be negative');

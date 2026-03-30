@@ -117,12 +117,7 @@ export class GasOptimizerDeployer {
         console.log(`   Optimization strategy: ${this.config.optimizationStrategy || 'BALANCED'}`);
         
         // Create the GasOptimizer instance
-        const gasOptimizer = new GasOptimizer(
-            this.config.owner,
-            config,
-            this.config.algorithmType || AlgorithmType.LINEAR_REGRESSION,
-            this.config.optimizationStrategy || OptimizationStrategy.BALANCED
-        );
+        const gasOptimizer = new GasOptimizer(this.config.owner);
         
         console.log(`   GasOptimizer created with owner: ${this.config.owner}`);
         
@@ -205,24 +200,24 @@ export class GasOptimizerDeployer {
             gasUsed += 5000;
             
             // Test 3: Check emergency status
-            const emergencyStatus = gasOptimizer.getEmergencyStatus();
+            const emergencyStatus = await gasOptimizer.getEmergencyStatus();
             if (emergencyStatus.emergencyMode !== false) {
                 throw new Error(`Emergency mode should be false initially`);
             }
             gasUsed += 3000;
             
             // Test 4: Check queue status
-            const queueStatus = gasOptimizer.getQueueStatus();
-            if (queueStatus.totalQueued !== 0) {
+            const queueStatus = await gasOptimizer.getQueueStatus();
+            if (queueStatus.totalQueued !== 0n) {
                 throw new Error(`Queue should be empty initially`);
             }
             gasUsed += 3000;
             
             // Test 5: Add a test transaction
-            const testBatchId = gasOptimizer.addToBatch(
+            const testBatchId = await gasOptimizer.addToBatch(
                 '0xTestContract',
-                1000,
-                new Uint8Array([0x12, 0x34]),
+                1000n,
+                "0x1234",
                 1 // HIGH priority
             );
             gasUsed += 50000;
@@ -232,7 +227,7 @@ export class GasOptimizerDeployer {
             }
             
             // Test 6: Get batch details
-            const batchDetails = gasOptimizer.getBatchDetails(testBatchId);
+            const batchDetails = await gasOptimizer.getBatchDetails(testBatchId);
             if (batchDetails.targets.length !== 1) {
                 throw new Error(`Batch should have 1 transaction`);
             }

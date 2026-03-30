@@ -47,8 +47,8 @@ export class GasOptimizer implements IGasOptimizer {
     
     // Algorithm
     private optimizationAlgorithm: OptimizationAlgorithm;
-    
-    // Events (simplified for TypeScript)
+
+    // Events (represented as callbacks)
     public onBatchCreated?: (batchId: bigint, creator: string, transactionCount: bigint, priority: number) => void;
     public onBatchExecuted?: (batchId: bigint, success: boolean, gasUsed: bigint, gasSaved: bigint) => void;
     public onQueueProcessed?: (processedCount: bigint, gasPrice: bigint, timestamp: bigint) => void;
@@ -57,25 +57,19 @@ export class GasOptimizer implements IGasOptimizer {
     public onSavingsReported?: (batchId: bigint, gasSaved: bigint, savingsPercentage: bigint) => void;
     public onEmergencyModeTriggered?: (enabled: boolean, maxGasPrice: bigint, triggeredBy: string) => void;
 
-    constructor(
-        owner: string,
-        config?: Partial<BatchConfig>,
-        algorithmType: AlgorithmType = AlgorithmType.LINEAR_REGRESSION,
-        strategy: OptimizationStrategy = OptimizationStrategy.BALANCED
-    ) {
+    constructor(owner: string) {
         this.owner = owner;
-        this.config = { ...DEFAULT_BATCH_CONFIG, ...config };
-        this.emergencyConfig = DEFAULT_EMERGENCY_STATUS;
-        this.networkConditions = DEFAULT_NETWORK_CONDITIONS;
-        this.costMetrics = DEFAULT_COST_METRICS;
+        this.config = { ...DEFAULT_BATCH_CONFIG };
+        this.emergencyConfig = { ...DEFAULT_EMERGENCY_STATUS };
+        this.networkConditions = { ...DEFAULT_NETWORK_CONDITIONS };
+        this.costMetrics = { ...DEFAULT_COST_METRICS };
         
         this.optimizationAlgorithm = new OptimizationAlgorithm(
-            algorithmType,
-            strategy,
+            AlgorithmType.LINEAR_REGRESSION,
+            OptimizationStrategy.BALANCED,
             this.config
         );
-        
-        // Initialize historical data
+
         this.initializeHistoricalData();
     }
 
@@ -96,42 +90,101 @@ export class GasOptimizer implements IGasOptimizer {
             new TextEncoder().encode(data),
             priority as Priority,
             this.config.emergencyMaxGasPrice,
-            this.owner // Using owner as sender for this implementation
+            this.owner
         );
 
-        const batchIdString = this.generateBatchIdForTx(transaction);
-        let batch = this.batches.get(batchIdString);
+        // Estimate gas for the transaction
+        transaction.gasEstimate = GasLib.estimateTransactionGas(target, Number(value), transaction.data);
         
-        if (!batch) {
-            batch = BatchStructureUtils.createBatch([], this.owner, 0, this.networkConditions.currentGasPrice);
-            this.batches.set(batchIdString, batch);
-        }
-        
-        batch.transactions.push(transaction);
+        // Find or create appropriate batch
+        const batchId = this.findOrCreateBatch(transaction);
+        const batch = this.batches.get(batchId)!;
         
         if (this.onBatchCreated) {
-            this.onBatchCreated(BigInt(batch.id.replace('batch_', '')), this.owner, BigInt(batch.transactions.length), priority);
+            this.onBatchCreated(
+                this.parseId(batchId), 
+                this.owner, 
+                BigInt(batch.transactions.length), 
+                priority
+            );
         }
         
-        return BigInt(batch.id.replace('batch_', ''));
+        return this.parseId(batchId);
     }
 
     public async executeBatch(batchId: bigint): Promise<boolean> {
         this.requireNotPaused();
         const batchIdString = `batch_${batchId}`;
-        const batch = this.batches.get(batchIdString);
-        if (!batch) return false;
+        this.requireBatchExists(batchIdString);
         
-        batch.status = BatchStatus.EXECUTED;
-        return true;
+        const batch = this.batches.get(batchIdString)!;
+        
+        if (batch.status !== BatchStatus.PENDING && batch.status !== BatchStatus.SCHEDULED) {
+            throw new Error('Batch cannot be executed');
+        }
+        
+        // Optimize batch before execution
+        const optimizationResult = this.optimizationAlgorithm.optimizeBatch(
+            batch,
+            this.networkConditions
+        );
+        
+        batch.gasLimit = optimizationResult.optimizedGasLimit;
+        batch.gasPrice = optimizationResult.optimizedGasPrice;
+        batch.status = BatchStatus.EXECUTING;
+        
+        try {
+            const executionResult = this.executeBatchTransactions(batch);
+            
+            if (executionResult.success) {
+                batch.status = BatchStatus.EXECUTED;
+                batch.executedAt = Date.now();
+                batch.gasUsed = executionResult.gasUsed;
+                batch.savings = optimizationResult.estimatedSavings;
+                batch.savingsPercentage = optimizationResult.savingsPercentage;
+                batch.executionHash = executionResult.transactionHash;
+                
+                this.updateCostMetrics(batch, optimizationResult);
+                
+                if (this.onBatchExecuted) {
+                    this.onBatchExecuted(
+                        batchId, 
+                        true, 
+                        BigInt(Math.floor(executionResult.gasUsed)), 
+                        BigInt(Math.floor(optimizationResult.estimatedSavings))
+                    );
+                }
+                
+                return true;
+            } else {
+                batch.status = BatchStatus.FAILED;
+                batch.failureReason = executionResult.error;
+                throw new Error(executionResult.error || 'Batch execution failed');
+            }
+        } catch (error) {
+            batch.status = BatchStatus.FAILED;
+            batch.failureReason = error instanceof Error ? error.message : 'Unknown error';
+            throw error;
+        }
     }
 
     public async cancelBatch(batchId: bigint): Promise<boolean> {
+        this.requireNotPaused();
         const batchIdString = `batch_${batchId}`;
-        const batch = this.batches.get(batchIdString);
-        if (!batch) return false;
+        this.requireBatchExists(batchIdString);
+        
+        const batch = this.batches.get(batchIdString)!;
+        
+        if (batch.status === BatchStatus.EXECUTED || batch.status === BatchStatus.FAILED) {
+            throw new Error('Cannot cancel completed batch');
+        }
         
         batch.status = BatchStatus.CANCELLED;
+        
+        if (this.schedules.has(batchIdString)) {
+            this.schedules.delete(batchIdString);
+        }
+        
         return true;
     }
 
@@ -147,11 +200,12 @@ export class GasOptimizer implements IGasOptimizer {
         const batch = this.batches.get(batchIdString);
         if (!batch) throw new Error("Batch not found");
         
+        const decoder = new TextDecoder();
         return {
-            targets: batch.transactions.map(t => t.target),
-            values: batch.transactions.map(t => BigInt(t.value)),
-            data: batch.transactions.map(t => new TextDecoder().decode(t.data)),
-            priorities: batch.transactions.map(t => t.priority as number),
+            targets: batch.transactions.map(tx => tx.target),
+            values: batch.transactions.map(tx => BigInt(tx.value)),
+            data: batch.transactions.map(tx => decoder.decode(tx.data)),
+            priorities: batch.transactions.map(tx => tx.priority as number),
             timestamp: BigInt(batch.createdAt),
             executed: batch.status === BatchStatus.EXECUTED
         };
@@ -166,6 +220,9 @@ export class GasOptimizer implements IGasOptimizer {
         priority: number,
         maxGasPrice: bigint
     ): Promise<bigint> {
+        this.requireNotPaused();
+        this.requireNotEmergency();
+
         const transaction = BatchStructureUtils.createBatchTransaction(
             target,
             Number(value),
@@ -174,17 +231,75 @@ export class GasOptimizer implements IGasOptimizer {
             Number(maxGasPrice),
             this.owner
         );
+
+        transaction.gasEstimate = GasLib.estimateTransactionGas(target, Number(value), transaction.data);
         
-        const queueItem = BatchStructureUtils.createQueueItem(transaction, this.config.maxWaitTime);
+        const queueItem = BatchStructureUtils.createQueueItem(
+            transaction,
+            GasLib.getMaxWaitTime(priority)
+        );
+        
         this.queue.push(queueItem);
+        this.sortQueue();
         
-        return BigInt(queueItem.id.replace('queue_', ''));
+        return this.parseId(queueItem.id);
     }
 
     public async processQueue(maxGasPrice: bigint): Promise<bigint> {
-        const processed = BigInt(this.queue.length);
-        this.queue = [];
-        return processed;
+        this.requireNotPaused();
+        
+        let processedCount = 0;
+        const itemsToProcess: QueueItem[] = [];
+        const maxPrice = Number(maxGasPrice);
+        
+        for (const item of this.queue) {
+            if (item.status !== QueueStatus.WAITING) continue;
+            if (item.transaction.maxGasPrice < maxPrice) continue;
+            if (Date.now() - item.submittedAt > item.maxWaitTime * 1000) continue;
+            
+            itemsToProcess.push(item);
+            if (itemsToProcess.length >= this.config.maxBatchSize) break;
+        }
+        
+        while (itemsToProcess.length > 0) {
+            const batchSize = Math.max(1, Math.min(itemsToProcess.length, this.config.minBatchSize));
+            const batchItems = itemsToProcess.splice(0, batchSize);
+            
+            const transactions = batchItems.map(item => item.transaction);
+            const batch = BatchStructureUtils.createBatch(
+                transactions,
+                this.owner,
+                transactions.reduce((sum, tx) => sum + tx.gasEstimate, 0),
+                maxPrice
+            );
+            
+            this.batches.set(batch.id, batch);
+            
+            for (const item of batchItems) {
+                item.status = QueueStatus.PROCESSING;
+                item.lastAttempt = Date.now();
+                item.attempts++;
+            }
+            
+            try {
+                await this.executeBatch(this.parseId(batch.id));
+                processedCount += batchItems.length;
+                this.queue = this.queue.filter(item => !batchItems.includes(item));
+            } catch (error) {
+                for (const item of batchItems) {
+                    item.status = QueueStatus.FAILED;
+                    if (item.attempts >= 3) {
+                        this.queue = this.queue.filter(q => q.id !== item.id);
+                    }
+                }
+            }
+        }
+        
+        if (this.onQueueProcessed) {
+            this.onQueueProcessed(BigInt(processedCount), maxGasPrice, BigInt(Date.now()));
+        }
+        
+        return BigInt(processedCount);
     }
 
     public async getQueueStatus(): Promise<{
@@ -193,11 +308,15 @@ export class GasOptimizer implements IGasOptimizer {
         mediumPriorityCount: bigint;
         lowPriorityCount: bigint;
     }> {
+        const highPriorityCount = this.queue.filter(item => item.priority === Priority.HIGH).length;
+        const mediumPriorityCount = this.queue.filter(item => item.priority === Priority.MEDIUM).length;
+        const lowPriorityCount = this.queue.filter(item => item.priority === Priority.LOW).length;
+        
         return {
             totalQueued: BigInt(this.queue.length),
-            highPriorityCount: BigInt(this.queue.filter(i => i.priority === Priority.HIGH).length),
-            mediumPriorityCount: BigInt(this.queue.filter(i => i.priority === Priority.MEDIUM).length),
-            lowPriorityCount: BigInt(this.queue.filter(i => i.priority === Priority.LOW).length)
+            highPriorityCount: BigInt(highPriorityCount),
+            mediumPriorityCount: BigInt(mediumPriorityCount),
+            lowPriorityCount: BigInt(lowPriorityCount)
         };
     }
 
@@ -223,6 +342,17 @@ export class GasOptimizer implements IGasOptimizer {
             Number(minutesAhead),
             Priority.MEDIUM
         );
+        
+        this.updateHistoricalGasPrices(prediction.price);
+        
+        if (this.onGasPredictionUpdated) {
+            this.onGasPredictionUpdated(
+                BigInt(Math.floor(prediction.price)), 
+                BigInt(Math.floor(prediction.confidence)), 
+                BigInt(Date.now())
+            );
+        }
+        
         return BigInt(Math.floor(prediction.price));
     }
 
@@ -231,24 +361,55 @@ export class GasOptimizer implements IGasOptimizer {
         endTime: bigint;
         expectedGasPrice: bigint;
     }> {
+        const currentTime = Date.now();
+        const maxWaitTime = this.config.maxWaitTime * 1000;
+        
+        let bestPrice = this.networkConditions.currentGasPrice;
+        let bestStartTime = currentTime;
+        
+        const minutesToScan = Math.min(60, maxWaitTime / 60000);
+        for (let minutesAhead = 1; minutesAhead <= minutesToScan; minutesAhead++) {
+            const predictedPrice = await this.predictGasPrice(BigInt(minutesAhead));
+            const priceNum = Number(predictedPrice);
+            
+            if (priceNum < bestPrice) {
+                bestPrice = priceNum;
+                bestStartTime = currentTime + (minutesAhead * 60000);
+            }
+        }
+        
         return {
-            startTime: BigInt(Date.now()),
-            endTime: BigInt(Date.now() + 3600000),
-            expectedGasPrice: BigInt(this.networkConditions.currentGasPrice)
+            startTime: BigInt(bestStartTime),
+            endTime: BigInt(bestStartTime + 300000), // 5 minute window
+            expectedGasPrice: BigInt(Math.floor(bestPrice))
         };
     }
 
     // Gas Price Prediction Functions
 
     public async updateGasPrediction(): Promise<boolean> {
+        this.updateNetworkConditions();
+        this.optimizationAlgorithm.updateParameters(this.costMetrics);
         return true;
     }
 
     public async getPredictionAccuracy(): Promise<bigint> {
-        return 95n;
+        return BigInt(Math.floor(this.optimizationAlgorithm.getPerformanceMetrics().accuracy));
     }
 
     public async setPredictionModel(modelId: number): Promise<boolean> {
+        this.requireOwner();
+        const algorithms = Object.values(AlgorithmType);
+        if (modelId < 0 || modelId >= algorithms.length) {
+            throw new Error('Invalid model ID');
+        }
+        
+        this.optimizationAlgorithm = new OptimizationAlgorithm(
+            algorithms[modelId],
+            OptimizationStrategy.BALANCED,
+            this.config
+        );
+        
         return true;
     }
 
@@ -259,10 +420,19 @@ export class GasOptimizer implements IGasOptimizer {
         optimizedGasPrice: bigint;
         estimatedSavings: bigint;
     }> {
+        const batchIdString = `batch_${batchId}`;
+        this.requireBatchExists(batchIdString);
+        
+        const batch = this.batches.get(batchIdString)!;
+        const optimizationResult = this.optimizationAlgorithm.optimizeBatch(
+            batch,
+            this.networkConditions
+        );
+        
         return {
-            optimizedGasLimit: 100000n,
-            optimizedGasPrice: 20n,
-            estimatedSavings: 5000n
+            optimizedGasLimit: BigInt(Math.floor(optimizationResult.optimizedGasLimit)),
+            optimizedGasPrice: BigInt(Math.floor(optimizationResult.optimizedGasPrice)),
+            estimatedSavings: BigInt(Math.floor(optimizationResult.estimatedSavings))
         };
     }
 
@@ -271,7 +441,14 @@ export class GasOptimizer implements IGasOptimizer {
         priorityFee: bigint,
         urgency: number
     ): Promise<bigint> {
-        return baseFee + priorityFee;
+        const totalBase = Number(baseFee + priorityFee);
+        const optimal = GasLib.calculateOptimalGasPrice(
+            totalBase,
+            this.networkConditions.networkCongestion,
+            urgency as Priority,
+            GasLib.getMaxWaitTime(urgency as Priority)
+        );
+        return BigInt(Math.floor(optimal));
     }
 
     // Batch Execution Scheduling Functions
@@ -281,513 +458,62 @@ export class GasOptimizer implements IGasOptimizer {
         maxWaitTime: bigint,
         maxGasPrice: bigint
     ): Promise<boolean> {
-        return true;
-    }
-
-    public async executeScheduledBatches(): Promise<bigint> {
-        return 0n;
-    }
-
-    public async cancelScheduledExecution(batchId: bigint): Promise<boolean> {
-        return true;
-    }
-
-    // Cost Tracking and Reporting Functions
-
-    public async getTotalSavings(): Promise<bigint> {
-        return BigInt(this.costMetrics.totalSavings);
-    }
-
-    public async getSavingsReport(periodStart: bigint, periodEnd: bigint): Promise<{
-        periodSavings: bigint;
-        batchesOptimized: bigint;
-        averageSavingsPercentage: bigint;
-    }> {
-        return {
-            periodSavings: BigInt(this.costMetrics.totalSavings),
-            batchesOptimized: BigInt(this.costMetrics.batchesProcessed),
-            averageSavingsPercentage: BigInt(Math.floor(this.costMetrics.averageSavingsPercentage))
-        };
-    }
-
-    public async getCostMetrics(): Promise<{
-        totalGasUsed: bigint;
-        totalGasSaved: bigint;
-        averageGasPrice: bigint;
-        optimizationRate: bigint;
-    }> {
-        return {
-            totalGasUsed: BigInt(this.costMetrics.totalGasUsed),
-            totalGasSaved: BigInt(this.costMetrics.totalGasSaved),
-            averageGasPrice: BigInt(this.costMetrics.averageGasPrice),
-            optimizationRate: BigInt(this.costMetrics.optimizationRate)
-        };
-    }
-
-    // Emergency Fee Controls Functions
-
-    public async setEmergencyGasLimit(maxGasPrice: bigint): Promise<boolean> {
-        this.emergencyConfig.maxGasPrice = Number(maxGasPrice);
-        return true;
-    }
-
-    public async enableEmergencyMode(enabled: boolean): Promise<boolean> {
-        this.emergencyMode = enabled;
-        return true;
-    }
-
-    public async getEmergencyStatus(): Promise<{
-        emergencyMode: boolean;
-        maxGasPrice: bigint;
-        lastTriggerTime: bigint;
-    }> {
-        return {
-            emergencyMode: this.emergencyMode,
-            maxGasPrice: BigInt(this.emergencyConfig.maxGasPrice),
-            lastTriggerTime: BigInt(this.emergencyConfig.lastTriggerTime)
-        };
-    }
-
-    // Configuration Functions
-
-    public async setBatchSize(minSize: bigint, maxSize: bigint): Promise<boolean> {
-        this.config.minBatchSize = Number(minSize);
-        this.config.maxBatchSize = Number(maxSize);
-        return true;
-    }
-
-    public async setPriorityThresholds(
-        highThreshold: bigint,
-        mediumThreshold: bigint
-    ): Promise<boolean> {
-        this.config.highPriorityThreshold = Number(highThreshold);
-        this.config.mediumPriorityThreshold = Number(mediumThreshold);
-        return true;
-    }
-
-    public async setOptimizationParameters(
-        targetSavings: bigint,
-        maxWaitTime: bigint
-    ): Promise<boolean> {
-        this.config.targetSavings = Number(targetSavings);
-        this.config.maxWaitTime = Number(maxWaitTime);
-        return true;
-    }
-
-    // Private helper for batch ID generation
-    private generateBatchIdForTx(tx: any): string {
-        return `batch_${Math.floor(Date.now() / 3600000)}`;
-    }
-        
-        // Estimate gas for the transaction
-        transaction.gasEstimate = GasLib.estimateTransactionGas(target, value, data);
-        
-        // Find or create appropriate batch
-        const batchId = this.findOrCreateBatch(transaction);
-        
-        this.emitBatchCreated(batchId, transaction.submittedBy, 1, priority);
-        
-        return batchId;
-    }
-
-    public executeBatch(batchId: string): boolean {
         this.requireNotPaused();
-        this.requireBatchExists(batchId);
+        const batchIdString = `batch_${batchId}`;
+        this.requireBatchExists(batchIdString);
         
-        const batch = this.batches.get(batchId)!;
-        
-        if (batch.status !== BatchStatus.PENDING && batch.status !== BatchStatus.SCHEDULED) {
-            throw new Error('Batch cannot be executed');
-        }
-        
-        // Check if scheduled time has arrived
-        if (batch.status === BatchStatus.SCHEDULED && batch.scheduledAt! > Date.now()) {
-            throw new Error('Batch scheduled for future execution');
-        }
-        
-        // Optimize batch before execution
-        const optimizationResult = this.optimizationAlgorithm.optimizeBatch(
-            batch,
-            this.networkConditions
-        );
-        
-        // Update batch with optimization results
-        batch.gasLimit = optimizationResult.optimizedGasLimit;
-        batch.gasPrice = optimizationResult.optimizedGasPrice;
-        batch.status = BatchStatus.EXECUTING;
-        
-        try {
-            // Execute batch (simplified - in practice, this would use actual contract calls)
-            const executionResult = this.executeBatchTransactions(batch);
-            
-            if (executionResult.success) {
-                batch.status = BatchStatus.EXECUTED;
-                batch.executedAt = Date.now();
-                batch.gasUsed = executionResult.gasUsed;
-                batch.savings = optimizationResult.estimatedSavings;
-                batch.savingsPercentage = optimizationResult.savingsPercentage;
-                batch.executionHash = executionResult.transactionHash;
-                
-                this.updateCostMetrics(batch, optimizationResult);
-                this.emitBatchExecuted(batchId, true, executionResult.gasUsed, optimizationResult.estimatedSavings);
-                
-                return true;
-            } else {
-                batch.status = BatchStatus.FAILED;
-                batch.failureReason = executionResult.error;
-                throw new Error(executionResult.error || 'Batch execution failed');
-            }
-        } catch (error) {
-            batch.status = BatchStatus.FAILED;
-            batch.failureReason = error instanceof Error ? error.message : 'Unknown error';
-            throw error;
-        }
-    }
-
-    public cancelBatch(batchId: string): boolean {
-        this.requireNotPaused();
-        this.requireBatchExists(batchId);
-        
-        const batch = this.batches.get(batchId)!;
-        
-        if (batch.status === BatchStatus.EXECUTED || batch.status === BatchStatus.FAILED) {
-            throw new Error('Cannot cancel completed batch');
-        }
-        
-        batch.status = BatchStatus.CANCELLED;
-        
-        // Remove from schedules if exists
-        if (this.schedules.has(batchId)) {
-            this.schedules.delete(batchId);
-        }
-        
-        return true;
-    }
-
-    public getBatchDetails(batchId: string): {
-        targets: string[];
-        values: number[];
-        data: Uint8Array[];
-        priorities: Priority[];
-        timestamp: number;
-        executed: boolean;
-    } {
-        const batch = this.batches.get(batchId);
-        if (!batch) {
-            throw new Error('Batch not found');
-        }
-        
-        return {
-            targets: batch.transactions.map(tx => tx.target),
-            values: batch.transactions.map(tx => tx.value),
-            data: batch.transactions.map(tx => tx.data),
-            priorities: batch.transactions.map(tx => tx.priority),
-            timestamp: batch.createdAt,
-            executed: batch.status === BatchStatus.EXECUTED
-        };
-    }
-
-    // Priority Queue Management Functions
-
-    public addToQueue(
-        target: string,
-        value: number,
-        data: Uint8Array,
-        priority: Priority,
-        maxGasPrice: number
-    ): string {
-        this.requireNotPaused();
-        this.requireNotEmergency();
-        
-        const transaction = BatchStructureUtils.createBatchTransaction(
-            target,
-            value,
-            data,
-            priority,
-            maxGasPrice,
-            this.owner
-        );
-        
-        transaction.gasEstimate = GasLib.estimateTransactionGas(target, value, data);
-        
-        const queueItem = BatchStructureUtils.createQueueItem(
-            transaction,
-            GasLib.getMaxWaitTime(priority)
-        );
-        
-        this.queue.push(queueItem);
-        this.sortQueue();
-        
-        return queueItem.id;
-    }
-
-    public processQueue(maxGasPrice: number): number {
-        this.requireNotPaused();
-        
-        let processedCount = 0;
-        const itemsToProcess: QueueItem[] = [];
-        
-        // Find items that can be processed
-        for (const item of this.queue) {
-            if (item.status !== QueueStatus.WAITING) continue;
-            if (item.transaction.maxGasPrice < maxGasPrice) continue;
-            if (Date.now() - item.submittedAt > item.maxWaitTime * 1000) continue;
-            
-            itemsToProcess.push(item);
-            if (itemsToProcess.length >= this.config.maxBatchSize) break;
-        }
-        
-        // Process items in batches
-        while (itemsToProcess.length > 0) {
-            const batchSize = Math.min(itemsToProcess.length, this.config.minBatchSize);
-            const batchItems = itemsToProcess.splice(0, batchSize);
-            
-            // Create batch from queue items
-            const transactions = batchItems.map(item => item.transaction);
-            const batch = BatchStructureUtils.createBatch(
-                transactions,
-                this.owner,
-                transactions.reduce((sum, tx) => sum + tx.gasEstimate, 0),
-                maxGasPrice
-            );
-            
-            this.batches.set(batch.id, batch);
-            
-            // Update queue items status
-            for (const item of batchItems) {
-                item.status = QueueStatus.PROCESSING;
-                item.lastAttempt = Date.now();
-                item.attempts++;
-            }
-            
-            // Execute the batch
-            try {
-                this.executeBatch(batch.id);
-                processedCount += batchItems.length;
-                
-                // Remove processed items from queue
-                this.queue = this.queue.filter(item => !batchItems.includes(item));
-            } catch (error) {
-                // Mark items as failed and keep in queue for retry
-                for (const item of batchItems) {
-                    item.status = QueueStatus.FAILED;
-                    if (item.attempts >= 3) {
-                        // Remove after 3 failed attempts
-                        this.queue = this.queue.filter(q => q.id !== item.id);
-                    }
-                }
-            }
-        }
-        
-        this.emitQueueProcessed(processedCount, maxGasPrice, Date.now());
-        return processedCount;
-    }
-
-    public getQueueStatus(): {
-        totalQueued: number;
-        highPriorityCount: number;
-        mediumPriorityCount: number;
-        lowPriorityCount: number;
-    } {
-        const highPriorityCount = this.queue.filter(item => item.priority === Priority.HIGH).length;
-        const mediumPriorityCount = this.queue.filter(item => item.priority === Priority.MEDIUM).length;
-        const lowPriorityCount = this.queue.filter(item => item.priority === Priority.LOW).length;
-        
-        return {
-            totalQueued: this.queue.length,
-            highPriorityCount,
-            mediumPriorityCount,
-            lowPriorityCount
-        };
-    }
-
-    // Network Condition Analysis Functions
-
-    public getNetworkConditions(): {
-        currentGasPrice: number;
-        networkCongestion: number;
-        blockTime: number;
-        isOptimalTime: boolean;
-    } {
-        return {
-            currentGasPrice: this.networkConditions.currentGasPrice,
-            networkCongestion: this.networkConditions.networkCongestion,
-            blockTime: this.networkConditions.blockTime,
-            isOptimalTime: this.networkConditions.isOptimalTime
-        };
-    }
-
-    public predictGasPrice(minutesAhead: number): number {
-        const prediction = this.optimizationAlgorithm.predictOptimalGasPrice(
-            this.networkConditions,
-            minutesAhead,
-            Priority.MEDIUM
-        );
-        
-        this.updateHistoricalGasPrices(prediction.price);
-        this.emitGasPredictionUpdated(prediction.price, prediction.confidence, Date.now());
-        
-        return prediction.price;
-    }
-
-    public getOptimalExecutionWindow(): {
-        startTime: number;
-        endTime: number;
-        expectedGasPrice: number;
-    } {
-        const currentTime = Date.now();
-        const maxWaitTime = this.config.maxWaitTime * 1000;
-        
-        // Find optimal window within max wait time
-        let bestPrice = this.networkConditions.currentGasPrice;
-        let bestStartTime = currentTime;
-        
-        for (let minutesAhead = 1; minutesAhead <= maxWaitTime / 60000; minutesAhead++) {
-            const predictedPrice = this.predictGasPrice(minutesAhead);
-            
-            if (predictedPrice < bestPrice) {
-                bestPrice = predictedPrice;
-                bestStartTime = currentTime + (minutesAhead * 60000);
-            }
-        }
-        
-        return {
-            startTime: bestStartTime,
-            endTime: bestStartTime + 300000, // 5 minute window
-            expectedGasPrice: bestPrice
-        };
-    }
-
-    // Gas Price Prediction Functions
-
-    public updateGasPrediction(): boolean {
-        // Update network conditions (simplified - in practice, this would fetch from oracle)
-        this.updateNetworkConditions();
-        
-        // Update algorithm parameters based on performance
-        this.optimizationAlgorithm.updateParameters(this.costMetrics);
-        
-        return true;
-    }
-
-    public getPredictionAccuracy(): number {
-        return this.optimizationAlgorithm.getPerformanceMetrics().accuracy;
-    }
-
-    public setPredictionModel(modelId: number): boolean {
-        this.requireOwner();
-        
-        const algorithms = Object.values(AlgorithmType);
-        if (modelId < 0 || modelId >= algorithms.length) {
-            throw new Error('Invalid model ID');
-        }
-        
-        // Create new algorithm with selected model
-        this.optimizationAlgorithm = new OptimizationAlgorithm(
-            algorithms[modelId],
-            OptimizationStrategy.BALANCED,
-            this.config
-        );
-        
-        return true;
-    }
-
-    // Fee Optimization Algorithm Functions
-
-    public optimizeBatchGas(batchId: string): {
-        optimizedGasLimit: number;
-        optimizedGasPrice: number;
-        estimatedSavings: number;
-    } {
-        this.requireBatchExists(batchId);
-        
-        const batch = this.batches.get(batchId)!;
-        const optimizationResult = this.optimizationAlgorithm.optimizeBatch(
-            batch,
-            this.networkConditions
-        );
-        
-        return {
-            optimizedGasLimit: optimizationResult.optimizedGasLimit,
-            optimizedGasPrice: optimizationResult.optimizedGasPrice,
-            estimatedSavings: optimizationResult.estimatedSavings
-        };
-    }
-
-    public calculateOptimalFee(
-        baseFee: number,
-        priorityFee: number,
-        urgency: Priority
-    ): number {
-        return GasLib.calculateOptimalGasPrice(
-            baseFee + priorityFee,
-            this.networkConditions.networkCongestion,
-            urgency,
-            GasLib.getMaxWaitTime(urgency)
-        );
-    }
-
-    // Batch Execution Scheduling Functions
-
-    public scheduleBatchExecution(
-        batchId: string,
-        maxWaitTime: number,
-        maxGasPrice: number
-    ): boolean {
-        this.requireNotPaused();
-        this.requireBatchExists(batchId);
-        
-        const batch = this.batches.get(batchId)!;
+        const batch = this.batches.get(batchIdString)!;
         
         if (batch.status !== BatchStatus.PENDING) {
             throw new Error('Only pending batches can be scheduled');
         }
         
-        const scheduledTime = Date.now() + (maxWaitTime * 1000);
+        const scheduledTime = Date.now() + (Number(maxWaitTime) * 1000);
         
         const schedule: ExecutionSchedule = {
-            batchId,
+            batchId: batchIdString,
             scheduledTime,
-            maxGasPrice,
+            maxGasPrice: Number(maxGasPrice),
             priority: this.getBatchPriority(batch),
             estimatedDuration: this.estimateBatchExecutionDuration(batch),
             status: BatchStatus.SCHEDULED
         };
         
-        this.schedules.set(batchId, schedule);
+        this.schedules.set(batchIdString, schedule);
         batch.scheduledAt = scheduledTime;
         batch.status = BatchStatus.SCHEDULED;
         
         return true;
     }
 
-    public executeScheduledBatches(): number {
+    public async executeScheduledBatches(): Promise<bigint> {
         this.requireNotPaused();
         
         let executedCount = 0;
         const currentTime = Date.now();
         
-        for (const [batchId, schedule] of this.schedules) {
+        for (const [batchIdString, schedule] of this.schedules) {
             if (schedule.scheduledTime <= currentTime) {
                 try {
-                    this.executeBatch(batchId);
+                    await this.executeBatch(this.parseId(batchIdString));
                     executedCount++;
                 } catch (error) {
-                    console.error(`Failed to execute scheduled batch ${batchId}:`, error);
+                    console.error(`Failed to execute scheduled batch ${batchIdString}:`, error);
                 }
             }
         }
         
-        return executedCount;
+        return BigInt(executedCount);
     }
 
-    public cancelScheduledExecution(batchId: string): boolean {
-        this.requireBatchExists(batchId);
+    public async cancelScheduledExecution(batchId: bigint): Promise<boolean> {
+        const batchIdString = `batch_${batchId}`;
+        this.requireBatchExists(batchIdString);
         
-        if (this.schedules.has(batchId)) {
-            this.schedules.delete(batchId);
+        if (this.schedules.has(batchIdString)) {
+            this.schedules.delete(batchIdString);
             
-            const batch = this.batches.get(batchId)!;
+            const batch = this.batches.get(batchIdString)!;
             batch.status = BatchStatus.PENDING;
             batch.scheduledAt = undefined;
             
@@ -799,22 +525,24 @@ export class GasOptimizer implements IGasOptimizer {
 
     // Cost Tracking and Reporting Functions
 
-    public getTotalSavings(): number {
-        return this.costMetrics.totalSavings;
+    public async getTotalSavings(): Promise<bigint> {
+        return BigInt(Math.floor(this.costMetrics.totalSavings));
     }
 
-    public getSavingsReport(periodStart: number, periodEnd: number): {
-        periodSavings: number;
-        batchesOptimized: number;
-        averageSavingsPercentage: number;
-    } {
-        // Calculate savings for the specified period
+    public async getSavingsReport(periodStart: bigint, periodEnd: bigint): Promise<{
+        periodSavings: bigint;
+        batchesOptimized: bigint;
+        averageSavingsPercentage: bigint;
+    }> {
         let periodSavings = 0;
         let batchesOptimized = 0;
         let totalSavingsPercentage = 0;
         
+        const start = Number(periodStart);
+        const end = Number(periodEnd);
+        
         for (const batch of this.batches.values()) {
-            if (batch.executedAt && batch.executedAt >= periodStart && batch.executedAt <= periodEnd) {
+            if (batch.executedAt && batch.executedAt >= start && batch.executedAt <= end) {
                 if (batch.savings && batch.savingsPercentage) {
                     periodSavings += batch.savings;
                     totalSavingsPercentage += batch.savingsPercentage;
@@ -826,65 +554,65 @@ export class GasOptimizer implements IGasOptimizer {
         const averageSavingsPercentage = batchesOptimized > 0 ? totalSavingsPercentage / batchesOptimized : 0;
         
         return {
-            periodSavings,
-            batchesOptimized,
-            averageSavingsPercentage
+            periodSavings: BigInt(Math.floor(periodSavings)),
+            batchesOptimized: BigInt(batchesOptimized),
+            averageSavingsPercentage: BigInt(Math.floor(averageSavingsPercentage))
         };
     }
 
-    public getCostMetrics(): {
-        totalGasUsed: number;
-        totalGasSaved: number;
-        averageGasPrice: number;
-        optimizationRate: number;
-    } {
+    public async getCostMetrics(): Promise<{
+        totalGasUsed: bigint;
+        totalGasSaved: bigint;
+        averageGasPrice: bigint;
+        optimizationRate: bigint;
+    }> {
         return {
-            totalGasUsed: this.costMetrics.totalGasUsed,
-            totalGasSaved: this.costMetrics.totalGasSaved,
-            averageGasPrice: this.costMetrics.averageGasPrice,
-            optimizationRate: this.costMetrics.optimizationRate
+            totalGasUsed: BigInt(Math.floor(this.costMetrics.totalGasUsed)),
+            totalGasSaved: BigInt(Math.floor(this.costMetrics.totalGasSaved)),
+            averageGasPrice: BigInt(Math.floor(this.costMetrics.averageGasPrice)),
+            optimizationRate: BigInt(Math.floor(this.costMetrics.optimizationRate))
         };
     }
 
     // Emergency Fee Controls Functions
 
-    public setEmergencyGasLimit(maxGasPrice: number): boolean {
+    public async setEmergencyGasLimit(maxGasPrice: bigint): Promise<boolean> {
         this.requireOwner();
-        
-        this.emergencyConfig.maxGasPrice = maxGasPrice;
-        this.config.emergencyMaxGasPrice = maxGasPrice;
-        
+        this.emergencyConfig.maxGasPrice = Number(maxGasPrice);
+        this.config.emergencyMaxGasPrice = Number(maxGasPrice);
         return true;
     }
 
-    public enableEmergencyMode(enabled: boolean): boolean {
+    public async enableEmergencyMode(enabled: boolean): Promise<boolean> {
         this.requireOwner();
-        
         this.emergencyMode = enabled;
         this.emergencyConfig.emergencyMode = enabled;
         this.emergencyConfig.lastTriggerTime = Date.now();
         this.emergencyConfig.triggeredBy = this.owner;
         
-        this.emitEmergencyModeTriggered(enabled, this.emergencyConfig.maxGasPrice, this.owner);
+        if (this.onEmergencyModeTriggered) {
+            this.onEmergencyModeTriggered(enabled, BigInt(this.emergencyConfig.maxGasPrice), this.owner);
+        }
         
         return true;
     }
 
-    public getEmergencyStatus(): {
+    public async getEmergencyStatus(): Promise<{
         emergencyMode: boolean;
-        maxGasPrice: number;
-        lastTriggerTime: number;
-    } {
+        maxGasPrice: bigint;
+        lastTriggerTime: bigint;
+    }> {
         return {
             emergencyMode: this.emergencyConfig.emergencyMode,
-            maxGasPrice: this.emergencyConfig.maxGasPrice,
-            lastTriggerTime: this.emergencyConfig.lastTriggerTime
+            maxGasPrice: BigInt(this.emergencyConfig.maxGasPrice),
+            lastTriggerTime: BigInt(this.emergencyConfig.lastTriggerTime)
         };
     }
 
     // Configuration Functions
 
     public async setBatchSize(minSize: bigint, maxSize: bigint): Promise<boolean> {
+        this.requireOwner();
         this.config.minBatchSize = Number(minSize);
         this.config.maxBatchSize = Number(maxSize);
         return true;
@@ -894,6 +622,7 @@ export class GasOptimizer implements IGasOptimizer {
         highThreshold: bigint,
         mediumThreshold: bigint
     ): Promise<boolean> {
+        this.requireOwner();
         this.config.highPriorityThreshold = Number(highThreshold);
         this.config.mediumPriorityThreshold = Number(mediumThreshold);
         return true;
@@ -903,248 +632,10 @@ export class GasOptimizer implements IGasOptimizer {
         targetSavings: bigint,
         maxWaitTime: bigint
     ): Promise<boolean> {
+        this.requireOwner();
         this.config.targetSavings = Number(targetSavings);
         this.config.maxWaitTime = Number(maxWaitTime);
         return true;
-    }
-
-    // Private Helper Functions
-
-    private requireNotPaused(): void {
-        if (this.paused) {
-            throw new Error('Contract is paused');
-        }
-    }
-
-    private requireNotEmergency(): void {
-        if (this.emergencyMode) {
-            throw new Error('Emergency mode is active');
-        }
-    }
-
-    private requireOwner(): void {
-        // In practice, this would check msg.sender === owner
-        // For this implementation, we'll assume the check passes
-    }
-
-    private requireBatchExists(batchId: string): void {
-        if (!this.batches.has(batchId)) {
-            throw new Error('Batch not found');
-        }
-    }
-
-    private findOrCreateBatch(transaction: BatchTransaction): string {
-        // Try to find an existing batch with same priority and available capacity
-        for (const [batchId, batch] of this.batches) {
-            if (batch.status === BatchStatus.PENDING &&
-                batch.transactions.length < this.config.maxBatchSize &&
-                this.getBatchPriority(batch) === transaction.priority) {
-                
-                batch.transactions.push(transaction);
-                return batchId;
-            }
-        }
-        
-        // Create new batch
-        const newBatch = BatchStructureUtils.createBatch(
-            [transaction],
-            transaction.submittedBy,
-            transaction.gasEstimate || 21000, // Default gas estimate if not set
-            this.networkConditions.currentGasPrice
-        );
-        
-        this.batches.set(newBatch.id, newBatch);
-        return newBatch.id;
-    }
-
-    private getBatchPriority(batch: Batch): Priority {
-        const priorities = batch.transactions.map(tx => tx.priority);
-        const avgPriority = priorities.reduce((sum, p) => sum + p, 0) / priorities.length;
-        return avgPriority <= 1.5 ? Priority.HIGH : avgPriority <= 2.5 ? Priority.MEDIUM : Priority.LOW;
-    }
-
-    private sortQueue(): void {
-        this.queue.sort((a, b) => {
-            // Sort by priority first, then by submission time
-            if (a.priority !== b.priority) {
-                return a.priority - b.priority;
-            }
-            return a.submittedAt - b.submittedAt;
-        });
-    }
-
-    private executeBatchTransactions(batch: Batch): {
-        success: boolean;
-        gasUsed: number;
-        transactionHash?: string;
-        error?: string;
-    } {
-        // Simplified batch execution simulation
-        // In practice, this would execute actual transactions
-        
-        const totalGasEstimate = batch.transactions.reduce((sum, tx) => sum + tx.gasEstimate, 0);
-        const actualGasUsed = totalGasEstimate * (0.9 + Math.random() * 0.2); // 90-110% of estimate
-        
-        // Simulate occasional failures
-        if (Math.random() < 0.05) { // 5% failure rate
-            return {
-                success: false,
-                gasUsed: 0,
-                error: 'Transaction execution failed'
-            };
-        }
-        
-        return {
-            success: true,
-            gasUsed: actualGasUsed,
-            transactionHash: `0x${Math.random().toString(16).substr(2, 64)}`
-        };
-    }
-
-    private updateCostMetrics(batch: Batch, optimizationResult: OptimizationResult): void {
-        this.costMetrics.totalGasUsed += batch.gasUsed || 0;
-        this.costMetrics.totalGasSaved += optimizationResult.estimatedSavings;
-        this.costMetrics.batchesProcessed += 1;
-        this.costMetrics.totalSavings += optimizationResult.estimatedSavings;
-        
-        // Update averages
-        this.costMetrics.averageGasPrice = 
-            (this.costMetrics.averageGasPrice * (this.costMetrics.batchesProcessed - 1) + batch.gasPrice) / 
-            this.costMetrics.batchesProcessed;
-        
-        this.costMetrics.averageSavingsPercentage = 
-            (this.costMetrics.averageSavingsPercentage * (this.costMetrics.batchesProcessed - 1) + optimizationResult.savingsPercentage) / 
-            this.costMetrics.batchesProcessed;
-        
-        // Update optimization rate
-        this.costMetrics.optimizationRate = this.optimizationAlgorithm.getPerformanceMetrics().accuracy;
-        
-        this.costMetrics.lastUpdated = Date.now();
-    }
-
-    private updateNetworkConditions(): void {
-        // Simplified network condition update
-        // In practice, this would fetch from an oracle
-        
-        const currentGasPrice = this.getCurrentGasPrice();
-        const congestion = this.calculateNetworkCongestion();
-        const blockTime = 12 + Math.floor(Math.random() * 8); // 12-20 seconds
-        const isOptimal = GasLib.isOptimalExecutionTime(currentGasPrice, this.historicalGasPrices);
-        
-        this.networkConditions = {
-            currentGasPrice,
-            networkCongestion: congestion,
-            blockTime,
-            isOptimalTime: isOptimal,
-            trend: this.calculateGasTrend(),
-            condition: this.getNetworkCondition(congestion),
-            lastUpdated: Date.now()
-        };
-        
-        this.emitNetworkConditionUpdate(currentGasPrice, congestion, isOptimal);
-    }
-
-    private getCurrentGasPrice(): number {
-        // Simplified gas price simulation
-        // In practice, this would fetch from the network
-        return 20 + Math.floor(Math.random() * 100); // 20-120 gwei
-    }
-
-    private calculateNetworkCongestion(): number {
-        // Simplified congestion calculation
-        // In practice, this would analyze network activity
-        return Math.floor(Math.random() * 100); // 0-100%
-    }
-
-    private calculateGasTrend(): number {
-        if (this.historicalGasPrices.length < 2) return 0;
-        
-        const recent = this.historicalGasPrices.slice(-10);
-        const older = this.historicalGasPrices.slice(-20, -10);
-        
-        if (older.length === 0) return 0;
-        
-        const recentAvg = recent.reduce((sum, price) => sum + price, 0) / recent.length;
-        const olderAvg = older.reduce((sum, price) => sum + price, 0) / older.length;
-        
-        if (recentAvg > olderAvg * 1.1) return 1; // Increasing
-        if (recentAvg < olderAvg * 0.9) return -1; // Decreasing
-        return 0; // Stable
-    }
-
-    private getNetworkCondition(congestion: number): any {
-        if (congestion < 30) return 0; // LOW
-        if (congestion < 60) return 1; // MEDIUM
-        if (congestion < 90) return 2; // HIGH
-        return 3; // CRITICAL
-    }
-
-    private updateHistoricalGasPrices(price: number): void {
-        this.historicalGasPrices.push(price);
-        
-        // Keep only last 1000 prices
-        if (this.historicalGasPrices.length > 1000) {
-            this.historicalGasPrices = this.historicalGasPrices.slice(-1000);
-        }
-    }
-
-    private initializeHistoricalData(): void {
-        // Initialize with some historical data
-        for (let i = 0; i < 50; i++) {
-            this.historicalGasPrices.push(20 + Math.floor(Math.random() * 80));
-        }
-    }
-
-    private estimateBatchExecutionDuration(batch: Batch): number {
-        const baseTime = 1000; // 1 second
-        const perTxTime = 50; // 50ms per transaction
-        const networkMultiplier = 1 + (this.networkConditions.networkCongestion / 100);
-        
-        return baseTime + (batch.transactions.length * perTxTime * networkMultiplier);
-    }
-
-    // Event Emitters (simplified)
-
-    private emitBatchCreated(batchId: bigint, creator: string, txCount: bigint, priority: number): void {
-        if (this.onBatchCreated) {
-            this.onBatchCreated(batchId, creator, txCount, priority);
-        }
-    }
-
-    private emitBatchExecuted(batchId: bigint, success: boolean, gasUsed: bigint, gasSaved: bigint): void {
-        if (this.onBatchExecuted) {
-            this.onBatchExecuted(batchId, success, gasUsed, gasSaved);
-        }
-    }
-
-    private emitQueueProcessed(processedCount: bigint, gasPrice: bigint, timestamp: bigint): void {
-        if (this.onQueueProcessed) {
-            this.onQueueProcessed(processedCount, gasPrice, timestamp);
-        }
-    }
-
-    private emitNetworkConditionUpdate(gasPrice: bigint, congestion: bigint, optimalTime: boolean): void {
-        if (this.onNetworkConditionUpdate) {
-            this.onNetworkConditionUpdate(gasPrice, congestion, optimalTime);
-        }
-    }
-
-    private emitGasPredictionUpdated(predictedPrice: bigint, accuracy: bigint, timestamp: bigint): void {
-        if (this.onGasPredictionUpdated) {
-            this.onGasPredictionUpdated(predictedPrice, accuracy, timestamp);
-        }
-    }
-
-    private emitSavingsReported(batchId: bigint, gasSaved: bigint, savingsPercentage: bigint): void {
-        if (this.onSavingsReported) {
-            this.onSavingsReported(batchId, gasSaved, savingsPercentage);
-        }
-    }
-
-    private emitEmergencyModeTriggered(enabled: boolean, maxGasPrice: bigint, triggeredBy: string): void {
-        if (this.onEmergencyModeTriggered) {
-            this.onEmergencyModeTriggered(enabled, maxGasPrice, triggeredBy);
-        }
     }
 
     // Utility Functions
@@ -1173,5 +664,156 @@ export class GasOptimizer implements IGasOptimizer {
 
     public getAlgorithmPerformance(): any {
         return this.optimizationAlgorithm.getPerformanceMetrics();
+    }
+
+    // Private Helper Functions
+
+    private requireNotPaused(): void {
+        if (this.paused) throw new Error('Contract is paused');
+    }
+
+    private requireNotEmergency(): void {
+        if (this.emergencyMode) throw new Error('Emergency mode is active');
+    }
+
+    private requireOwner(): void {
+        // Assume check passes for simulation
+    }
+
+    private requireBatchExists(batchId: string): void {
+        if (!this.batches.has(batchId)) throw new Error('Batch not found');
+    }
+
+    private parseId(id: string): bigint {
+        return BigInt(id.replace(/^[a-z]+_/, '').replace(/_[a-z0-9]+$/, '')) || 0n;
+    }
+
+    private findOrCreateBatch(transaction: BatchTransaction): string {
+        for (const [batchId, batch] of this.batches) {
+            if (batch.status === BatchStatus.PENDING &&
+                batch.transactions.length < this.config.maxBatchSize &&
+                this.getBatchPriority(batch) === transaction.priority) {
+                batch.transactions.push(transaction);
+                return batchId;
+            }
+        }
+        
+        const newBatch = BatchStructureUtils.createBatch(
+            [transaction],
+            this.owner,
+            transaction.gasEstimate || 21000,
+            this.networkConditions.currentGasPrice
+        );
+        
+        this.batches.set(newBatch.id, newBatch);
+        return newBatch.id;
+    }
+
+    private getBatchPriority(batch: Batch): Priority {
+        if (batch.transactions.length === 0) return Priority.MEDIUM;
+        const priorities = batch.transactions.map(tx => tx.priority);
+        const avgPriority = priorities.reduce((sum, p) => sum + p, 0) / priorities.length;
+        return avgPriority <= 1.5 ? Priority.HIGH : avgPriority <= 2.5 ? Priority.MEDIUM : Priority.LOW;
+    }
+
+    private sortQueue(): void {
+        this.queue.sort((a, b) => {
+            if (a.priority !== b.priority) return a.priority - b.priority;
+            return a.submittedAt - b.submittedAt;
+        });
+    }
+
+    private executeBatchTransactions(batch: Batch): {
+        success: boolean;
+        gasUsed: number;
+        transactionHash?: string;
+        error?: string;
+    } {
+        const totalGasEstimate = batch.transactions.reduce((sum, tx) => sum + tx.gasEstimate, 0);
+        const actualGasUsed = totalGasEstimate * (0.9 + Math.random() * 0.2);
+        
+        if (Math.random() < 0.05) {
+            return { success: false, gasUsed: 0, error: 'Transaction execution failed' };
+        }
+        
+        return {
+            success: true,
+            gasUsed: actualGasUsed,
+            transactionHash: `0x${Math.random().toString(16).substring(2, 64)}`
+        };
+    }
+
+    private updateCostMetrics(batch: Batch, optimizationResult: OptimizationResult): void {
+        this.costMetrics.totalGasUsed += batch.gasUsed || 0;
+        this.costMetrics.totalGasSaved += optimizationResult.estimatedSavings;
+        this.costMetrics.batchesProcessed += 1;
+        this.costMetrics.totalSavings += optimizationResult.estimatedSavings;
+        
+        this.costMetrics.averageGasPrice = 
+            (this.costMetrics.averageGasPrice * (this.costMetrics.batchesProcessed - 1) + batch.gasPrice) / 
+            this.costMetrics.batchesProcessed;
+            
+        this.costMetrics.averageSavingsPercentage = 
+            (this.costMetrics.averageSavingsPercentage * (this.costMetrics.batchesProcessed - 1) + optimizationResult.savingsPercentage) / 
+            this.costMetrics.batchesProcessed;
+            
+        this.costMetrics.optimizationRate = this.optimizationAlgorithm.getPerformanceMetrics().accuracy;
+        this.costMetrics.lastUpdated = Date.now();
+    }
+
+    private updateNetworkConditions(): void {
+        const currentGasPrice = this.getCurrentGasPrice();
+        const congestion = this.calculateNetworkCongestion();
+        const blockTime = 12 + Math.floor(Math.random() * 8);
+        const isOptimal = GasLib.isOptimalExecutionTime(currentGasPrice, this.historicalGasPrices);
+        
+        this.networkConditions = {
+            currentGasPrice,
+            networkCongestion: congestion,
+            blockTime,
+            isOptimalTime: isOptimal,
+            trend: this.calculateGasTrend(),
+            condition: BatchStructureUtils.getNetworkCondition(congestion),
+            lastUpdated: Date.now()
+        };
+        
+        if (this.onNetworkConditionUpdate) {
+            this.onNetworkConditionUpdate(BigInt(currentGasPrice), BigInt(congestion), isOptimal);
+        }
+    }
+
+    private getCurrentGasPrice(): number {
+        return 20 + Math.floor(Math.random() * 30);
+    }
+
+    private calculateNetworkCongestion(): number {
+        return Math.floor(Math.random() * 100);
+    }
+
+    private calculateGasTrend(): number {
+        return Math.floor(Math.random() * 3) - 1;
+    }
+
+    private updateHistoricalGasPrices(price: number): void {
+        this.historicalGasPrices.push(price);
+        if (this.historicalGasPrices.length > 100) {
+            this.historicalGasPrices.shift();
+        }
+    }
+
+    private initializeHistoricalData(): void {
+        for (let i = 0; i < 50; i++) {
+            this.historicalGasPrices.push(20 + Math.floor(Math.random() * 30));
+        }
+    }
+
+    private estimateBatchExecutionDuration(batch: Batch): number {
+        return BatchStructureUtils.estimateExecutionTime(batch, this.networkConditions);
+    }
+
+    private emitEmergencyModeTriggered(enabled: boolean, maxGasPrice: bigint, triggeredBy: string): void {
+        if (this.onEmergencyModeTriggered) {
+            this.onEmergencyModeTriggered(enabled, maxGasPrice, triggeredBy);
+        }
     }
 }

@@ -656,14 +656,13 @@ export class FeeManager implements IFeeManager {
                 percentageFee: defaultStructure.percentageFee!,
                 minFee: defaultStructure.minFee!,
                 maxFee: defaultStructure.maxFee!,
-                tiers: defaultStructure.tiers || [],
-                dynamicAdjustment: defaultStructure.dynamicAdjustment!,
-                volumeThresholds: defaultStructure.volumeThresholds!,
+                tiers: defaultStructure.tiers ? JSON.parse(JSON.stringify(defaultStructure.tiers)) : [],
+                dynamicAdjustment: JSON.parse(JSON.stringify(defaultStructure.dynamicAdjustment!)),
+                volumeThresholds: JSON.parse(JSON.stringify(defaultStructure.volumeThresholds!)),
                 isActive: true,
                 createdAt: Date.now(),
                 updatedAt: Date.now()
             };
-            
             this.feeStructures.set(transactionType, structure);
         }
 

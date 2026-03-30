@@ -17,6 +17,8 @@ import {
   StateSnapshot
 } from "../interfaces/IUpgradeManager";
 
+import { TimeUtils } from "../libraries/UpgradeLib";
+
 /**
  * @dev Upgrade Proposal structure with comprehensive metadata
  */
@@ -102,7 +104,7 @@ export class UpgradeProposalStruct implements UpgradeProposal {
    * @dev Check if execution window is active
    */
   public isExecutionWindowActive(): boolean {
-    const now = Math.floor(Date.now() / 1000);
+    const now = TimeUtils.now();
     return now >= this.scheduledAt && now <= (this.scheduledAt + this.executionWindow);
   }
 

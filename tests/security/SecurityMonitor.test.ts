@@ -10,6 +10,7 @@ import { AnomalyDetection } from '../../contracts/security/algorithms/AnomalyDet
 import { ComplianceEngine, KYCRecord } from '../../contracts/security/engines/ComplianceEngine';
 import {
   SecuritySeverity,
+  SecurityEventType,
   AnomalyType,
   ComplianceSeverity,
   SecurityThresholds,
@@ -24,6 +25,29 @@ describe('SecurityMonitor', () => {
 
   beforeEach(() => {
     securityMonitor = new SecurityMonitor();
+    
+    // Setup KYC for test addresses to avoid compliance violations in basic tests
+    const complianceEngine = (securityMonitor as any).complianceEngine;
+    if (complianceEngine) {
+      const actor = '0x1234567890123456789012345678901234567890';
+      const target = '0x0987654321098765432109876543210987654321';
+      
+      complianceEngine.addKYCRecord(actor, {
+        address: actor,
+        level: 1,
+        verified: true,
+        status: 'VERIFIED',
+        expiryDate: Date.now() + 1000000
+      });
+      
+      complianceEngine.addKYCRecord(target, {
+        address: target,
+        level: 1,
+        verified: true,
+        status: 'VERIFIED',
+        expiryDate: Date.now() + 1000000
+      });
+    }
   });
 
   describe('Transaction Monitoring', () => {
@@ -206,6 +230,9 @@ describe('SecurityMonitor', () => {
     });
 
     test('should detect compliance violations', async () => {
+      // Use an address that DOES NOT have KYC to trigger violation
+      const nonKycAddress = '0x9999999999999999999999999999999999999999';
+      
       // Add a compliance rule that will be violated
       const rule = new ComplianceRule(
         'TEST_RULE',
@@ -220,13 +247,13 @@ describe('SecurityMonitor', () => {
       await securityMonitor.addComplianceRule(rule);
 
       const context = new ComplianceContext(
-        '0x1234567890123456789012345678901234567890',
+        nonKycAddress,
         'TRANSACTION',
         1000, // Exceeds rule limit
         'GLOBAL'
       );
 
-      const result = await securityMonitor.enforceComplianceRules('0x1234567890123456789012345678901234567890', context);
+      const result = await securityMonitor.enforceComplianceRules(nonKycAddress, context);
       
       expect(result.enforced).toBe(true);
       expect(result.actionsTaken.length).toBeGreaterThan(0);
@@ -379,7 +406,7 @@ describe('SecurityMonitor', () => {
       
       expect(securityEvents.length).toBeGreaterThan(0);
       expect(securityEvents.some(event => 
-        event.eventType.toString() === 'TRANSACTION'
+        event.eventType === SecurityEventType.TRANSACTION
       )).toBe(true);
     });
 
@@ -627,8 +654,14 @@ describe('AnomalyDetection', () => {
         new TransactionPattern('0x1234', 1000, Date.now() - 1000),
         new TransactionPattern('0x1234', 1100, Date.now() - 2000),
         new TransactionPattern('0x1234', 1050, Date.now() - 3000),
-        new TransactionPattern('0x1234', 10000000, Date.now() - 4000), // Anomaly
-        new TransactionPattern('0x1234', 950, Date.now() - 5000),
+        new TransactionPattern('0x1234', 1020, Date.now() - 4000),
+        new TransactionPattern('0x1234', 10000000, Date.now() - 5000), // Anomaly
+        new TransactionPattern('0x1234', 950, Date.now() - 6000),
+        new TransactionPattern('0x1234', 1000, Date.now() - 7000),
+        new TransactionPattern('0x1234', 1100, Date.now() - 8000),
+        new TransactionPattern('0x1234', 1050, Date.now() - 9000),
+        new TransactionPattern('0x1234', 950, Date.now() - 10000),
+        new TransactionPattern('0x1234', 1000, Date.now() - 11000),
       ];
 
       const result = AnomalyDetection.detectStatisticalAnomalies(
@@ -793,13 +826,23 @@ describe('ComplianceEngine', () => {
 
 // Integration Tests
 describe('Security System Integration', () => {
+  const actor = '0x1234567890123456789012345678901234567890';
+  const target = '0x0987654321098765432109876543210987654321';
+
   test('should integrate all components seamlessly', async () => {
     const securityMonitor = new SecurityMonitor();
     
+    // Setup KYC for integration test
+    const complianceEngine = (securityMonitor as any).complianceEngine;
+    if (complianceEngine) {
+      complianceEngine.addKYCRecord(actor, new KYCRecord(actor, 1, true));
+      complianceEngine.addKYCRecord(target, new KYCRecord(target, 1, true));
+    }
+
     // Test transaction monitoring
     const txResult = await securityMonitor.monitorTransaction(
-      '0x1234567890123456789012345678901234567890',
-      '0x0987654321098765432109876543210987654321',
+      actor,
+      target,
       1000,
       '0x',
       21000
@@ -837,10 +880,17 @@ describe('Security System Integration', () => {
   test('should handle emergency scenarios', async () => {
     const securityMonitor = new SecurityMonitor();
     
+    // Setup KYC for integration test
+    const complianceEngine = (securityMonitor as any).complianceEngine;
+    if (complianceEngine) {
+      complianceEngine.addKYCRecord(actor, new KYCRecord(actor, 1, true));
+      complianceEngine.addKYCRecord(target, new KYCRecord(target, 1, true));
+    }
+
     // Normal operation
     const normalResult = await securityMonitor.monitorTransaction(
-      '0x1234567890123456789012345678901234567890',
-      '0x0987654321098765432109876543210987654321',
+      actor,
+      target,
       1000,
       '0x',
       21000

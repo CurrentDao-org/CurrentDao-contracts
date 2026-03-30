@@ -1,6 +1,6 @@
 import { PriceOracle } from '../../contracts/oracle/PriceOracle';
 import { OracleMetadata, AggregationResult } from '../../contracts/oracle/interfaces/IPriceOracle';
-import { Oracle, PriceFeed, DeviationThreshold, OracleConfig } from '../../contracts/oracle/structures/OracleStructure';
+import { Oracle, PriceFeed, DeviationThreshold, OracleConfig, PriceDataPoint } from '../../contracts/oracle/structures/OracleStructure';
 import { AggregationLib } from '../../contracts/oracle/libraries/AggregationLib';
 import { Address, u128, u64 } from '../../contracts/oracle/structures/OracleStructure';
 
@@ -340,9 +340,8 @@ describe('PriceOracle', () => {
             expect(currentPrice).toBe(0n);
         });
     });
-});
 
-describe('AggregationLib', () => {
+    describe('AggregationLib', () => {
     describe('calculateWeightedAverage', () => {
         test('should calculate correct weighted average', () => {
             const priceFeeds = [
@@ -351,16 +350,16 @@ describe('AggregationLib', () => {
                 new PriceFeed("0xOracle3", "0xAsset1", 3000000n, Date.now(), new Uint8Array())
             ];
             
-            const oracles = {
+            const oracles = new Map(Object.entries({
                 "0xOracle1": new Oracle("0xOracle1", {} as OracleMetadata, 100),
                 "0xOracle2": new Oracle("0xOracle2", {} as OracleMetadata, 200),
                 "0xOracle3": new Oracle("0xOracle3", {} as OracleMetadata, 300)
-            };
+            }));
             
             // Set all feeds as valid
             priceFeeds.forEach(feed => feed.isValid = true);
             
-            const result = AggregationLib.calculateWeightedAverage(priceFeeds, oracles);
+            const result = AggregationLib.calculateWeightedAverage(priceFeeds, oracles as any);
             
             expect(result.isValid).toBe(true);
             expect(result.participatingOracles).toBe(3);
@@ -371,7 +370,7 @@ describe('AggregationLib', () => {
         });
 
         test('should handle empty price feeds', () => {
-            const result = AggregationLib.calculateWeightedAverage([], {});
+            const result = AggregationLib.calculateWeightedAverage([], new Map());
             expect(result.isValid).toBe(false);
             expect(result.weightedPrice).toBe(0n);
         });
@@ -515,7 +514,7 @@ describe('AggregationLib', () => {
             const prices = [1000000n, 1050000n, 1100000n, 1150000n, 1200000n];
             const mean = 1100000n;
             
-            const stdDev = AggregationLib.calculateStandardDeviationOptimized(prices, mean);
+            const stdDev = AggregationLib.calculateStandardDeviation(prices, mean);
             expect(stdDev).toBeGreaterThan(0n);
             
             const sqrt = AggregationLib.sqrtOptimized(1000000n);
@@ -605,4 +604,5 @@ describe('AggregationLib', () => {
             expect(history.length).toBeLessThanOrEqual(1000); // Default max size
         });
     });
+});
 });

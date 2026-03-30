@@ -2,7 +2,6 @@ import {
     IPriceOracle, 
     OracleMetadata, 
     OracleInfo, 
-    PriceDataPoint, 
     AggregationResult 
 } from './interfaces/IPriceOracle';
 import { 
@@ -11,7 +10,8 @@ import {
     PriceFeed, 
     PriceHistory, 
     DeviationThreshold, 
-    OracleConfig 
+    OracleConfig,
+    PriceDataPoint
 } from './structures/OracleStructure';
 import { AggregationLib } from './libraries/AggregationLib';
 import { Address, u128, u64, i64, Bool, Vec, Map } from './structures/OracleStructure';
@@ -46,8 +46,8 @@ export class PriceOracle implements IPriceOracle {
         this.requireNotPaused();
         this.requireValidOracle(oracleId);
         
-        const oracle = this.registry.oracles[oracleId as string];
-        this.requireOracleCanSubmit(oracle, timestamp);
+        const oracle = this.registry.oracles.get(oracleId as string);
+        this.requireOracleCanSubmit(oracle!, timestamp);
         
         const feed = new PriceFeed(oracleId, this.getAssetIdFromOracle(oracleId), price, timestamp, signature);
         
@@ -59,7 +59,9 @@ export class PriceOracle implements IPriceOracle {
             this.storePriceFeed(feed);
             
             // Update oracle statistics
-            this.updateOracleStats(oracle, true);
+            if (oracle) {
+                this.updateOracleStats(oracle, true);
+            }
             
             // Check for aggregation trigger
             this.checkAggregationTrigger(feed.assetId);
@@ -68,7 +70,9 @@ export class PriceOracle implements IPriceOracle {
             this.emitPriceFeedSubmitted(oracleId, feed.assetId, price, timestamp);
         } else {
             // Handle invalid submission
-            this.handleInvalidSubmission(oracle, feed);
+            if (oracle) {
+                this.handleInvalidSubmission(oracle, feed);
+            }
         }
     }
     
@@ -96,21 +100,21 @@ export class PriceOracle implements IPriceOracle {
         this.requireOwner();
         this.requireNotPaused();
         
-        if (this.registry.oracles[oracleAddress as string]) {
+        if (this.registry.oracles.has(oracleAddress as string)) {
             throw new Error("Oracle already registered");
         }
         
         const oracle = new Oracle(oracleAddress, metadata);
-        this.registry.oracles[oracleAddress as string] = oracle;
-        this.registry.activeOracles[oracleAddress as string] = true;
+        this.registry.oracles.set(oracleAddress as string, oracle);
+        this.registry.activeOracles.set(oracleAddress as string, true);
         
         // Add oracle to supported assets
         for (const assetId of metadata.supportedAssets) {
-            if (!this.registry.assetOracles[assetId as string]) {
-                this.registry.assetOracles[assetId as string] = [];
+            if (!this.registry.assetOracles.has(assetId as string)) {
+                this.registry.assetOracles.set(assetId as string, []);
             }
             
-            const assetOracles = this.registry.assetOracles[assetId as string];
+            const assetOracles = this.registry.assetOracles.get(assetId as string)!;
             if (assetOracles.length >= this.config.maxOraclesPerAsset) {
                 throw new Error("Maximum oracles reached for asset");
             }
@@ -136,7 +140,7 @@ export class PriceOracle implements IPriceOracle {
     updateOracleReputation(oracleId: Address, reputationDelta: i64): void {
         this.requireOwner();
         
-        const oracle = this.registry.oracles[oracleId as string];
+        const oracle = this.registry.oracles.get(oracleId as string);
         if (!oracle) {
             throw new Error("Oracle not found");
         }
@@ -146,7 +150,7 @@ export class PriceOracle implements IPriceOracle {
         // Deactivate if reputation falls below threshold
         if (newReputation < this.config.minReputationThreshold) {
             oracle.isActive = false;
-            this.registry.activeOracles[oracleId as string] = false;
+            this.registry.activeOracles.set(oracleId as string, false);
         }
         
         oracle.reputation = newReputation;
@@ -157,13 +161,13 @@ export class PriceOracle implements IPriceOracle {
     deactivateOracle(oracleId: Address): void {
         this.requireOwner();
         
-        const oracle = this.registry.oracles[oracleId as string];
+        const oracle = this.registry.oracles.get(oracleId as string);
         if (!oracle) {
             throw new Error("Oracle not found");
         }
         
         oracle.isActive = false;
-        this.registry.activeOracles[oracleId as string] = false;
+        this.registry.activeOracles.set(oracleId as string, false);
     }
     
     // --- Aggregation and Validation ---
@@ -174,7 +178,7 @@ export class PriceOracle implements IPriceOracle {
             return 0n;
         }
         
-        const assetOracles = this.registry.assetOracles[assetId as string];
+        const assetOracles = this.registry.assetOracles.get(assetId as string);
         if (!assetOracles || assetOracles.length === 0) {
             return 0n;
         }
@@ -184,7 +188,7 @@ export class PriceOracle implements IPriceOracle {
         const now = Date.now();
         
         for (const oracleId of assetOracles) {
-            const oracle = this.registry.oracles[oracleId as string];
+            const oracle = this.registry.oracles.get(oracleId as string);
             if (!oracle || !oracle.isActive) continue;
             
             // Get the latest feed from this oracle
@@ -207,7 +211,7 @@ export class PriceOracle implements IPriceOracle {
     }
     
     validatePriceFeed(price: u128, oracleId: Address): Bool {
-        const oracle = this.registry.oracles[oracleId as string];
+        const oracle = this.registry.oracles.get(oracleId as string);
         if (!oracle) {
             return false;
         }
@@ -237,7 +241,7 @@ export class PriceOracle implements IPriceOracle {
     // --- Query Methods ---
     
     getOracleInfo(oracleId: Address): OracleInfo {
-        const oracle = this.registry.oracles[oracleId as string];
+        const oracle = this.registry.oracles.get(oracleId as string);
         if (!oracle) {
             throw new Error("Oracle not found");
         }
@@ -254,8 +258,8 @@ export class PriceOracle implements IPriceOracle {
     }
     
     getActiveOracles(): Vec<Address> {
-        return Object.keys(this.registry.activeOracles).filter(
-            oracleId => this.registry.activeOracles[oracleId]
+        return Array.from(this.registry.activeOracles.keys()).filter(
+            oracleId => this.registry.activeOracles.get(oracleId)
         ) as Vec<Address>;
     }
     
@@ -310,7 +314,7 @@ export class PriceOracle implements IPriceOracle {
     }
     
     private requireValidOracle(oracleId: Address): void {
-        const oracle = this.registry.oracles[oracleId as string];
+        const oracle = this.registry.oracles.get(oracleId as string);
         if (!oracle) {
             throw new Error("Oracle not registered");
         }
@@ -326,7 +330,7 @@ export class PriceOracle implements IPriceOracle {
     }
     
     private getAssetIdFromOracle(oracleId: Address): Address {
-        const oracle = this.registry.oracles[oracleId as string];
+        const oracle = this.registry.oracles.get(oracleId as string);
         if (!oracle || oracle.metadata.supportedAssets.length === 0) {
             throw new Error("No supported assets for oracle");
         }
@@ -344,7 +348,7 @@ export class PriceOracle implements IPriceOracle {
             feed.timestamp,
             feed.oracleId,
             feed.isValid,
-            this.registry.oracles[feed.oracleId as string]?.getWeight() || 0
+            this.registry.oracles.get(feed.oracleId as string)?.getWeight() || 0
         );
         
         history.addDataPoint(dataPoint);
@@ -402,7 +406,7 @@ export class PriceOracle implements IPriceOracle {
         this.config.automatedUpdates = true;
         
         // Start aggregation for all supported assets
-        for (const assetId in this.registry.assetOracles) {
+        for (const assetId of this.registry.assetOracles.keys()) {
             this.scheduleNextAggregation(assetId as Address);
         }
     }

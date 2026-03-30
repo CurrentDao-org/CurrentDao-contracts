@@ -32,12 +32,7 @@ describe('GasOptimizer', () => {
             maxWaitTime: 300
         };
         
-        gasOptimizer = new GasOptimizer(
-            owner,
-            config,
-            AlgorithmType.LINEAR_REGRESSION,
-            OptimizationStrategy.BALANCED
-        );
+        gasOptimizer = new GasOptimizer(owner);
     });
 
     describe('Contract Initialization', () => {

@@ -552,17 +552,16 @@ describe('EnergyEscrow', () => {
     });
 
     it('should not auto-release disputed escrows', (done) => {
-      escrow.createDispute(escrowId, seller, 'Dispute', [], buyer).then(() => {
-        setTimeout(async () => {
-          const processedCount = await escrow.processAutoReleases();
-          expect(processedCount).toBe(0);
-          
-          const details = await escrow.getEscrowDetails(escrowId);
-          expect(details.status).toBe(EscrowStatus.DISPUTED);
-          
-          done();
-        }, 1100);
-      });
+      escrow.createDispute(escrowId, seller, 'Dispute', [], buyer);
+      setTimeout(async () => {
+        const processedCount = await escrow.processAutoReleases();
+        expect(processedCount).toBe(0);
+        
+        const details = await escrow.getEscrowDetails(escrowId);
+        expect(details.status).toBe(EscrowStatus.DISPUTED);
+        
+        done();
+      }, 1100);
     });
   });
 

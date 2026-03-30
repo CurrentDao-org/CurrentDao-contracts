@@ -4,7 +4,7 @@
  * @dev Provides secure upgrade mechanism with state preservation and access control
  */
 
-import { UpgradeSecurity, UpgradeValidator } from '../libraries/UpgradeLib';
+import { UpgradeSecurity, UpgradeValidator, TimeUtils } from '../libraries/UpgradeLib';
 import { ProxyInfo } from '../interfaces/IUpgradeManager';
 
 /**
@@ -52,6 +52,7 @@ export class UpgradeProxy {
       throw new Error("Invalid admin address");
     }
     this._admin = admin;
+    this._upgradeCount = 0;
   }
 
   /**
@@ -163,8 +164,12 @@ export class UpgradeProxy {
 
     const oldImplementation = this._implementation;
     this._implementation = newImplementation;
-    this._upgradeCount++;
-    this._lastUpgradeAt = Math.floor(Date.now() / 1000);
+    
+    if (oldImplementation !== "") {
+      this._upgradeCount++;
+    }
+    
+    this._lastUpgradeAt = TimeUtils.now();
     this._version = this.generateNewVersion();
 
     this.onUpgraded?.(newImplementation);
@@ -187,8 +192,12 @@ export class UpgradeProxy {
 
     const oldImplementation = this._implementation;
     this._implementation = newImplementation;
-    this._upgradeCount++;
-    this._lastUpgradeAt = Math.floor(Date.now() / 1000);
+    
+    if (oldImplementation !== "") {
+      this._upgradeCount++;
+    }
+    
+    this._lastUpgradeAt = TimeUtils.now();
     this._version = this.generateNewVersion();
 
     // Execute initialization data
@@ -266,7 +275,7 @@ export class UpgradeProxy {
     const oldImplementation = this._implementation;
     this._implementation = newImplementation;
     this._upgradeCount++;
-    this._lastUpgradeAt = Math.floor(Date.now() / 1000);
+    this._lastUpgradeAt = TimeUtils.now();
     this._version = this.generateNewVersion() + "-emergency";
 
     // Execute emergency initialization
@@ -294,7 +303,7 @@ export class UpgradeProxy {
     const oldImplementation = this._implementation;
     this._implementation = previousImplementation;
     this._upgradeCount++;
-    this._lastUpgradeAt = Math.floor(Date.now() / 1000);
+    this._lastUpgradeAt = TimeUtils.now();
     this._version = this.generateNewVersion() + "-rollback";
 
     this.onUpgraded?.(previousImplementation);

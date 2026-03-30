@@ -82,7 +82,7 @@ describe('FeeManager', () => {
             
             const result = feeManager.calculateFee(1000, user1, 'TRADE');
             
-            expect(result.dynamicAdjustment).toBeGreaterThan(0);
+            expect(result.dynamicAdjustmentAmount).toBeGreaterThan(0);
             expect(result.totalFee).toBeGreaterThan(5); // Base fee
         });
 
@@ -92,7 +92,7 @@ describe('FeeManager', () => {
             
             const result = feeManager.calculateFee(1000, user1, 'TRADE');
             
-            expect(result.dynamicAdjustment).toBe(0);
+            expect(result.dynamicAdjustmentAmount).toBe(0);
             expect(result.totalFee).toBe(5); // Base fee only
         });
 
@@ -448,7 +448,7 @@ describe('FeeManager', () => {
             const result = feeManager.calculateFeeWithExemption(5000, user1, 'TRADE', exemptionId);
             
             // Verify all adjustments are applied
-            expect(result.dynamicAdjustment).toBeGreaterThan(0);
+            expect(result.dynamicAdjustmentAmount).toBeGreaterThan(0);
             expect(result.volumeDiscount).toBeGreaterThan(0);
             expect(result.exemptionDiscount).toBe(500);
             expect(result.tierUsed).toBe('vip');

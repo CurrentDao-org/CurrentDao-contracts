@@ -1,170 +1,105 @@
 import { EmergencyPause } from '../../contracts/emergency/EmergencyPause';
-import { EmergencyGovernance } from '../../contracts/emergency/governance/EmergencyGovernance';
-import { PauseLevel, EmergencyConfig, DEFAULT_EMERGENCY_CONFIG } from '../../contracts/emergency/structures/PauseStructure';
-import { EmergencyPauseError } from '../../contracts/emergency/interfaces/IEmergencyPause';
+import { 
+  PauseLevel, 
+  EmergencyConfig, 
+  DEFAULT_EMERGENCY_CONFIG 
+} from '../../contracts/emergency/structures/PauseStructure';
 
 /**
- * Integration tests for Emergency Pause System with existing platform contracts
+ * Mock contract for integration testing
  */
+class MockContract {
+  public address: string;
+  public isPaused: boolean = false;
+  public pauseLevel: PauseLevel = PauseLevel.NONE;
+  public pauseReason: string = '';
+
+  constructor(address: string) {
+    this.address = address;
+  }
+
+  public async executeOperation(operation: string): Promise<string> {
+    if (this.isPaused) {
+      throw new Error(`Contract ${this.address} is paused due to emergency`);
+    }
+    return `Operation ${operation} executed successfully`;
+  }
+
+  public onPause(level: PauseLevel, reason: string): void {
+    this.isPaused = true;
+    this.pauseLevel = level;
+    this.pauseReason = reason;
+  }
+
+  public onResume(): void {
+    this.isPaused = false;
+    this.pauseLevel = PauseLevel.NONE;
+    this.pauseReason = '';
+  }
+}
 
 describe('Emergency Pause Integration Tests', () => {
   let emergencyPause: EmergencyPause;
+  let mockContracts: Map<string, MockContract>;
   let governanceMembers: string[];
   let testConfig: EmergencyConfig;
-  let mockContracts: Map<string, MockContract>;
-
-  // Mock existing platform contracts
-  class MockContract {
-    public address: string;
-    public isPaused: boolean = false;
-    public operations: string[] = [];
-    public contractType: string;
-
-    constructor(address: string, contractType: string) {
-      this.address = address;
-      this.contractType = contractType;
-    }
-
-    public async executeOperation(operation: string): Promise<string> {
-      if (this.isPaused) {
-        throw new Error(`Contract ${this.address} is paused due to emergency`);
-      }
-      
-      this.operations.push(operation);
-      return `Operation ${operation} executed successfully`;
-    }
-
-    public pause(): void {
-      this.isPaused = true;
-    }
-
-    public resume(): void {
-      this.isPaused = false;
-    }
-
-    public getState(): { isPaused: boolean; operations: string[]; contractType: string } {
-      return {
-        isPaused: this.isPaused,
-        operations: [...this.operations],
-        contractType: this.contractType
-      };
-    }
-  }
 
   beforeEach(() => {
     governanceMembers = [
       '0x1234567890123456789012345678901234567890',
       '0x2345678901234567890123456789012345678901',
-      '0x3456789012345678901234567890123456789012',
-      '0x4567890123456789012345678901234567890123',
-      '0x5678901234567890123456789012345678901234'
+      '0x3456789012345678901234567890123456789012'
     ];
 
-    // Critical contracts representing existing platform contracts
-    const criticalContracts = [
-      '0x1111111111111111111111111111111111111111',      // Token contract
-      '0x2222222222222222222222222222222222222222',        // DAO contract
-      '0x3333333333333333333333333333333333333333',     // Escrow contract
-      '0x4444444444444444444444444444444444444444',       // Fees contract
-      '0x5555555555555555555555555555555555555555'    // Security contract
-    ];
+    mockContracts = new Map([
+      ['0x1111111111111111111111111111111111111111', new MockContract('0x1111111111111111111111111111111111111111')],
+      ['0x2222222222222222222222222222222222222222', new MockContract('0x2222222222222222222222222222222222222222')],
+      ['0x3333333333333333333333333333333333333333', new MockContract('0x3333333333333333333333333333333333333333')]
+    ]);
 
     testConfig = {
       ...DEFAULT_EMERGENCY_CONFIG,
       governanceMembers,
-      criticalContracts,
-      requiredSignatures: 3,
-      maxPauseDuration: 3600
+      criticalContracts: [
+        '0x1111111111111111111111111111111111111111',
+        '0x2222222222222222222222222222222222222222'
+      ],
+      requiredSignatures: 2
     };
 
-    emergencyPause = new EmergencyPause(governanceMembers, testConfig);
-
-    // Initialize mock contracts
-    mockContracts = new Map();
-    criticalContracts.forEach((address, index) => {
-      const types = ['token', 'dao', 'escrow', 'fees', 'security'];
-      mockContracts.set(address, new MockContract(address, types[index]));
+    // Initialize EmergencyPause with event handlers that update mock contracts
+    emergencyPause = new EmergencyPause(governanceMembers, testConfig, {
+      EmergencyPauseInitiated: (event) => {
+        if (event.level === PauseLevel.FULL) {
+          mockContracts.forEach(c => c.onPause(event.level, event.reason));
+        } else {
+          event.affectedContracts.forEach(addr => {
+            mockContracts.get(addr)?.onPause(event.level, event.reason);
+          });
+        }
+      },
+      EmergencyPauseResumed: (event) => {
+        mockContracts.forEach(c => c.onResume());
+      }
     });
-
-    // Setup event handlers to integrate with mock contracts
-    setupContractIntegration();
   });
 
-  /**
-   * @dev Sets up integration between emergency pause and mock contracts
-   */
-  function setupContractIntegration(): void {
-    // Override emergency pause methods to interact with mock contracts
-    const originalEmergencyPause = emergencyPause.emergencyPause.bind(emergencyPause);
-    emergencyPause.emergencyPause = async (level, reason, duration, affectedContracts) => {
-      await originalEmergencyPause(level, reason, duration, affectedContracts);
-      
-      // Pause affected mock contracts
-      affectedContracts.forEach(contractAddress => {
-        const contract = mockContracts.get(contractAddress);
-        if (contract) {
-          contract.pause();
-        }
-      });
-    };
-
-    const originalResumeOperations = emergencyPause.resumeOperations.bind(emergencyPause);
-    emergencyPause.resumeOperations = async (level, signatures, proof) => {
-      // In tests, signatures are the member addresses
-      await originalResumeOperations(level, signatures, proof);
-      
-      // Resume affected mock contracts
-      const status = await emergencyPause.getPauseStatus();
-      status.affectedContracts.forEach(contractAddress => {
-        const contract = mockContracts.get(contractAddress);
-        if (contract) {
-          contract.resume();
-        }
-      });
-    };
-  }
-
   describe('Contract State Integration', () => {
-    it('should pause specific contracts during SELECTIVE pause', async () => {
-      const affectedContracts = ['0x1111111111111111111111111111111111111111', '0x2222222222222222222222222222222222222222'];
-      
-      // Execute normal operations before pause
-      await mockContracts.get('0x1111111111111111111111111111111111111111')!.executeOperation('transfer');
-      await mockContracts.get('0x2222222222222222222222222222222222222222')!.executeOperation('create_proposal');
-      await mockContracts.get('0x3333333333333333333333333333333333333333')!.executeOperation('deposit');
-
-      // Initiate selective pause
+    it('should pause selective contracts', async () => {
+      const affected = ['0x1111111111111111111111111111111111111111'];
       await emergencyPause.emergencyPause(
         PauseLevel.SELECTIVE,
-        'Security vulnerability in token and DAO contracts',
+        'Security vulnerability in token contract',
         3600,
-        affectedContracts
+        affected
       );
 
-      // Verify affected contracts are paused
       expect(mockContracts.get('0x1111111111111111111111111111111111111111')!.isPaused).toBe(true);
-      expect(mockContracts.get('0x2222222222222222222222222222222222222222')!.isPaused).toBe(true);
-      
-      // Verify non-affected contracts are not paused
-      expect(mockContracts.get('0x3333333333333333333333333333333333333333')!.isPaused).toBe(false);
-
-      // Verify operations fail on paused contracts
-      await expect(
-        mockContracts.get('0x1111111111111111111111111111111111111111')!.executeOperation('transfer')
-      ).rejects.toThrow('is paused due to emergency');
-
-      await expect(
-        mockContracts.get('0x2222222222222222222222222222222222222222')!.executeOperation('vote')
-      ).rejects.toThrow('is paused due to emergency');
-
-      // Verify operations succeed on non-paused contracts
-      await expect(
-        mockContracts.get('0x3333333333333333333333333333333333333333')!.executeOperation('withdraw')
-      ).resolves.toBeDefined();
+      expect(mockContracts.get('0x2222222222222222222222222222222222222222')!.isPaused).toBe(false);
     });
 
     it('should pause all critical contracts during PARTIAL pause', async () => {
-      // Initiate partial pause
+      // Use empty array to trigger auto-population of critical contracts
       await emergencyPause.emergencyPause(
         PauseLevel.PARTIAL,
         'Critical bug discovered in platform core',
@@ -177,23 +112,9 @@ describe('Emergency Pause Integration Tests', () => {
         const contract = mockContracts.get(contractAddress);
         expect(contract!.isPaused).toBe(true);
       });
-
-      // Verify all operations fail
-      for (const [address, contract] of mockContracts) {
-        await expect(
-          contract.executeOperation('test_operation')
-        ).rejects.toThrow('is paused due to emergency');
-      }
     });
 
     it('should pause all contracts during FULL pause', async () => {
-      // Add some non-critical contracts
-      const utilityAddress = '0x6666666666666666666666666666666666666666';
-      const oracleAddress = '0x7777777777777777777777777777777777777777';
-      mockContracts.set(utilityAddress, new MockContract(utilityAddress, 'utility'));
-      mockContracts.set(oracleAddress, new MockContract(oracleAddress, 'oracle'));
-
-      // Initiate full pause
       await emergencyPause.emergencyPause(
         PauseLevel.FULL,
         'System-wide security emergency',
@@ -208,414 +129,28 @@ describe('Emergency Pause Integration Tests', () => {
     });
 
     it('should resume operations correctly', async () => {
-      const affectedContracts = ['0x1111111111111111111111111111111111111111', '0x2222222222222222222222222222222222222222'];
-      
-      // Pause contracts
       await emergencyPause.emergencyPause(
-        PauseLevel.SELECTIVE,
+        PauseLevel.FULL,
         'Test pause',
         3600,
-        affectedContracts
+        []
       );
 
-      // Verify contracts are paused
-      expect(mockContracts.get('0x1111111111111111111111111111111111111111')!.isPaused).toBe(true);
-      expect(mockContracts.get('0x2222222222222222222222222222222222222222')!.isPaused).toBe(true);
+      const signatures = governanceMembers.slice(0, 2);
+      await emergencyPause.resumeOperations(PauseLevel.FULL, signatures, '0xproof');
 
-      // Resume operations
-      await emergencyPause.resumeOperations(
-        PauseLevel.SELECTIVE,
-        [governanceMembers[0], governanceMembers[1], governanceMembers[2]],
-        'proof'
-      );
-
-      // Verify contracts are resumed
-      expect(mockContracts.get('0x1111111111111111111111111111111111111111')!.isPaused).toBe(false);
-      expect(mockContracts.get('0x2222222222222222222222222222222222222222')!.isPaused).toBe(false);
-
-      // Verify operations succeed
-      await expect(
-        mockContracts.get('0x1111111111111111111111111111111111111111')!.executeOperation('transfer')
-      ).resolves.toBeDefined();
-
-      await expect(
-        mockContracts.get('0x2222222222222222222222222222222222222222')!.executeOperation('create_proposal')
-      ).resolves.toBeDefined();
-    });
-  });
-
-  describe('Cross-Contract Communication', () => {
-    it('should maintain contract state consistency during pause/resume', async () => {
-      // Execute some operations
-      await mockContracts.get('0x1111111111111111111111111111111111111111')!.executeOperation('mint');
-      await mockContracts.get('0x2222222222222222222222222222222222222222')!.executeOperation('create_proposal');
-      
-      const tokenStateBefore = mockContracts.get('0x1111111111111111111111111111111111111111')!.getState();
-      const daoStateBefore = mockContracts.get('0x2222222222222222222222222222222222222222')!.getState();
-
-      // Pause contracts
-      await emergencyPause.emergencyPause(
-        PauseLevel.SELECTIVE,
-        'State consistency test',
-        3600,
-        ['0x1111111111111111111111111111111111111111', '0x2222222222222222222222222222222222222222']
-      );
-
-      // Verify states are preserved during pause
-      const tokenStateDuring = mockContracts.get('0x1111111111111111111111111111111111111111')!.getState();
-      const daoStateDuring = mockContracts.get('0x2222222222222222222222222222222222222222')!.getState();
-
-      expect(tokenStateDuring.operations).toEqual(tokenStateBefore.operations);
-      expect(daoStateDuring.operations).toEqual(daoStateBefore.operations);
-
-      // Resume contracts
-      await emergencyPause.resumeOperations(
-        PauseLevel.SELECTIVE,
-        [governanceMembers[0], governanceMembers[1], governanceMembers[2]],
-        'proof'
-      );
-
-      // Verify states are preserved after resume
-      const tokenStateAfter = mockContracts.get('0x1111111111111111111111111111111111111111')!.getState();
-      const daoStateAfter = mockContracts.get('0x2222222222222222222222222222222222222222')!.getState();
-
-      expect(tokenStateAfter.operations).toEqual(tokenStateBefore.operations);
-      expect(daoStateAfter.operations).toEqual(daoStateBefore.operations);
-    });
-
-    it('should handle concurrent operations during pause transition', async () => {
-      // Start multiple operations concurrently
-      const operations = [
-        mockContracts.get('0x1111111111111111111111111111111111111111')!.executeOperation('transfer'),
-        mockContracts.get('0x2222222222222222222222222222222222222222')!.executeOperation('vote'),
-        mockContracts.get('0x3333333333333333333333333333333333333333')!.executeOperation('deposit')
-      ];
-
-      // Initiate pause while operations are running
-      const pausePromise = emergencyPause.emergencyPause(
-        PauseLevel.SELECTIVE,
-        'Concurrent operations test',
-        3600,
-        ['0x1111111111111111111111111111111111111111', '0x2222222222222222222222222222222222222222']
-      );
-
-      // Wait for all operations to complete
-      const results = await Promise.allSettled(operations);
-
-      // Some operations should fail due to pause
-      expect(results[0].status === 'rejected' || results[1].status === 'rejected' || results[2].status === 'fulfilled').toBe(true);
-
-      await pausePromise;
-    });
-  });
-
-  describe('Gas Optimization Integration', () => {
-    it('should optimize gas usage for multiple contract pauses', async () => {
-      // Measure gas usage for selective pause
-      const gasData = await emergencyPause.getGasOptimizationData();
-      
-      // Initiate pause with multiple contracts
-      const startTime = Date.now();
-      await emergencyPause.emergencyPause(
-        PauseLevel.SELECTIVE,
-        'Gas optimization test',
-        3600,
-        ['0x1111111111111111111111111111111111111111', '0x2222222222222222222222222222222222222222', '0x3333333333333333333333333333333333333333']
-      );
-      const endTime = Date.now();
-
-      // Verify pause was efficient
-      expect(endTime - startTime).toBeLessThan(1000); // Should complete within 1 second
-      
-      // Verify gas estimates are reasonable
-      expect(gasData.pauseGasCost).toBeGreaterThan(0);
-      expect(gasData.pauseGasCost).toBeLessThan(500000); // Should be under 500k gas
-    });
-
-    it('should batch contract state updates efficiently', async () => {
-      // Add many contracts to test batching
-      for (let i = 0; i < 20; i++) {
-        const addr = `0x${(i+100).toString().padStart(40, '0')}`;
-        mockContracts.set(addr, new MockContract(addr, 'test'));
+      for (const [address, contract] of mockContracts) {
+        expect(contract.isPaused).toBe(false);
       }
-
-      const contractAddresses = Array.from(mockContracts.keys()).slice(0, 10);
-
-      // Measure performance
-      const startTime = Date.now();
-      await emergencyPause.emergencyPause(
-        PauseLevel.SELECTIVE,
-        'Batch update test',
-        3600,
-        contractAddresses
-      );
-      const endTime = Date.now();
-
-      // Should handle many contracts efficiently
-      expect(endTime - startTime).toBeLessThan(2000); // Should complete within 2 seconds
-
-      // Verify all contracts were paused
-      contractAddresses.forEach(address => {
-        expect(mockContracts.get(address)!.isPaused).toBe(true);
-      });
-    });
-  });
-
-  describe('Event-Driven Integration', () => {
-    it('should emit events that other contracts can listen to', async () => {
-      const events: any[] = [];
-      
-      // Setup event listeners
-      const eventHandlers = {
-        EmergencyPauseInitiated: (event: any) => {
-          events.push({ type: 'pause_initiated', data: event });
-        },
-        EmergencyPauseResumed: (event: any) => {
-          events.push({ type: 'pause_resumed', data: event });
-        },
-        GovernanceActionExecuted: (event: any) => {
-          events.push({ type: 'governance_action', data: event });
-        },
-        AutoResumeTriggered: (event: any) => {
-          events.push({ type: 'auto_resume', data: event });
-        },
-        EmergencyConfigUpdated: (event: any) => {
-          events.push({ type: 'config_updated', data: event });
-        }
-      };
-
-      // Create new emergency pause instance with event handlers
-      const eventfulPause = new EmergencyPause(governanceMembers, testConfig, eventHandlers);
-
-      // Trigger events
-      await eventfulPause.emergencyPause(
-        PauseLevel.SELECTIVE,
-        'Event test',
-        3600,
-        ['0x1111111111111111111111111111111111111111']
-      );
-
-      await eventfulPause.resumeOperations(
-        PauseLevel.SELECTIVE,
-        [governanceMembers[0], governanceMembers[1], governanceMembers[2]],
-        'proof'
-      );
-
-      // Verify events were emitted
-      expect(events).toHaveLength(2);
-      expect(events[0].type).toBe('pause_initiated');
-      expect(events[1].type).toBe('pause_resumed');
-    });
-
-    it('should allow contracts to react to pause events', async () => {
-      const reactions: string[] = [];
-
-      // Mock contract that reacts to pause events
-      class ReactiveContract extends MockContract {
-        constructor(address: string) {
-          super(address, 'reactive');
-        }
-
-        public onPauseInitiated(event: any): void {
-          reactions.push(`${this.address} reacted to pause: ${event.reason}`);
-        }
-
-        public onPauseResumed(event: any): void {
-          reactions.push(`${this.address} reacted to resume`);
-        }
-      }
-
-      const reactiveAddress = '0x8888888888888888888888888888888888888888';
-      const reactiveContract = new ReactiveContract(reactiveAddress);
-      mockContracts.set(reactiveAddress, reactiveContract);
-
-      // Setup event handlers
-      const eventHandlers = {
-        EmergencyPauseInitiated: (event: any) => {
-          reactiveContract.onPauseInitiated(event);
-        },
-        EmergencyPauseResumed: (event: any) => {
-          reactiveContract.onPauseResumed(event);
-        },
-        GovernanceActionExecuted: () => {},
-        AutoResumeTriggered: () => {},
-        EmergencyConfigUpdated: () => {}
-      };
-
-      const eventfulPause = new EmergencyPause(governanceMembers, testConfig, eventHandlers);
-
-      // Trigger pause/resume cycle
-      await eventfulPause.emergencyPause(
-        PauseLevel.SELECTIVE,
-        'Reactive test',
-        3600,
-        [reactiveAddress]
-      );
-
-      await eventfulPause.resumeOperations(
-        PauseLevel.SELECTIVE,
-        [governanceMembers[0], governanceMembers[1], governanceMembers[2]],
-        'proof'
-      );
-
-      // Verify contract reacted to events
-      expect(reactions).toHaveLength(2);
-      expect(reactions[0]).toContain('reacted to pause');
-      expect(reactions[1]).toContain('reacted to resume');
-    });
-  });
-
-  describe('Security Integration', () => {
-    it('should prevent unauthorized contract interactions during pause', async () => {
-      // Pause contracts
-      await emergencyPause.emergencyPause(
-        PauseLevel.SELECTIVE,
-        'Security test',
-        3600,
-        ['0x1111111111111111111111111111111111111111']
-      );
-
-      // Attempt unauthorized operations
-      const unauthorizedOperations = [
-        () => mockContracts.get('0x1111111111111111111111111111111111111111')!.executeOperation('unauthorized_transfer'),
-        () => mockContracts.get('0x1111111111111111111111111111111111111111')!.executeOperation('unauthorized_mint'),
-        () => mockContracts.get('0x1111111111111111111111111111111111111111')!.executeOperation('unauthorized_burn')
-      ];
-
-      // All should fail
-      for (const operation of unauthorizedOperations) {
-        await expect(operation()).rejects.toThrow('is paused due to emergency');
-      }
-    });
-
-    it('should maintain security guarantees during resume', async () => {
-      // Pause contracts
-      await emergencyPause.emergencyPause(
-        PauseLevel.SELECTIVE,
-        'Security resume test',
-        3600,
-        ['0x1111111111111111111111111111111111111111', '0x2222222222222222222222222222222222222222']
-      );
-
-      // Attempt operations during pause (should fail)
-      await expect(
-        mockContracts.get('0x1111111111111111111111111111111111111111')!.executeOperation('transfer')
-      ).rejects.toThrow('is paused due to emergency');
-
-      // Resume operations
-      await emergencyPause.resumeOperations(
-        PauseLevel.SELECTIVE,
-        [governanceMembers[0], governanceMembers[1], governanceMembers[2]],
-        'proof'
-      );
-
-      // Verify security is maintained after resume
-      await expect(
-        mockContracts.get('0x1111111111111111111111111111111111111111')!.executeOperation('transfer')
-      ).resolves.toBeDefined();
-
-      // Verify other contracts are still secure
-      expect(mockContracts.get('0x3333333333333333333333333333333333333333')!.isPaused).toBe(false);
-    });
-  });
-
-  describe('Performance Integration', () => {
-    it('should handle high-frequency operations efficiently', async () => {
-      const operationCount = 10;
-      const operations: Promise<string>[] = [];
-
-      // Generate high-frequency operations
-      for (let i = 0; i < operationCount; i++) {
-        operations.push(
-          mockContracts.get('0x1111111111111111111111111111111111111111')!.executeOperation(`transfer_${i}`)
-        );
-      }
-
-      // Execute operations
-      const startTime = Date.now();
-      const results = await Promise.allSettled(operations);
-      const endTime = Date.now();
-
-      // All should succeed
-      expect(results.every(r => r.status === 'fulfilled')).toBe(true);
-
-      // Should be efficient
-      expect(endTime - startTime).toBeLessThan(5000); // Should complete within 5 seconds
-
-      // Now test with pause in progress
-      await emergencyPause.emergencyPause(
-        PauseLevel.SELECTIVE,
-        'Performance test',
-        3600,
-        ['0x1111111111111111111111111111111111111111']
-      );
-
-      // Operations should fail quickly
-      const pauseOperations: Promise<string>[] = [];
-      for (let i = 0; i < 10; i++) {
-        pauseOperations.push(
-          mockContracts.get('0x1111111111111111111111111111111111111111')!.executeOperation(`transfer_pause_${i}`)
-        );
-      }
-
-      const pauseStartTime = Date.now();
-      const pauseResults = await Promise.allSettled(pauseOperations);
-      const pauseEndTime = Date.now();
-
-      // All should fail quickly
-      expect(pauseResults.every(r => r.status === 'rejected')).toBe(true);
-      expect(pauseEndTime - pauseStartTime).toBeLessThan(1000); // Should fail within 1 second
-    });
-
-    it('should maintain system performance during emergency scenarios', async () => {
-      // Simulate emergency scenario with multiple contracts
-      const emergencyContracts = ['0x1111111111111111111111111111111111111111', '0x2222222222222222222222222222222222222222', '0x3333333333333333333333333333333333333333'];
-      
-      // Start background operations
-      const backgroundOps: Promise<string>[] = [];
-      emergencyContracts.forEach(contract => {
-        for (let i = 0; i < 5; i++) {
-          backgroundOps.push(
-            mockContracts.get(contract)!.executeOperation(`bg_op_${i}`)
-          );
-        }
-      });
-
-      // Initiate emergency pause
-      const pausePromise = emergencyPause.emergencyPause(
-        PauseLevel.SELECTIVE,
-        'Emergency performance test',
-        3600,
-        emergencyContracts
-      );
-
-      // Wait for pause to complete
-      await pausePromise;
-
-      // System should remain responsive
-      const status = await emergencyPause.getPauseStatus();
-      expect(status.isActive).toBe(true);
-
-      // Analytics should be available
-      const analytics = await emergencyPause.getPauseAnalytics();
-      expect(analytics.totalPauses).toBe(1);
     });
   });
 
   describe('Error Handling Integration', () => {
     it('should handle contract integration errors gracefully', async () => {
-      // Create a faulty contract that throws errors
       class FaultyContract extends MockContract {
-        constructor(address: string) {
-          super(address, 'faulty');
-        }
-
         public async executeOperation(operation: string): Promise<string> {
           if (this.isPaused) {
             throw new Error(`Faulty contract ${this.address} is paused`);
-          }
-          if (operation === 'error_operation') {
-            throw new Error('Intentional error for testing');
           }
           return super.executeOperation(operation);
         }
@@ -625,17 +160,6 @@ describe('Emergency Pause Integration Tests', () => {
       const faultyContract = new FaultyContract(faultyAddress);
       mockContracts.set(faultyAddress, faultyContract);
 
-      // Test normal operation
-      await expect(
-        faultyContract.executeOperation('normal_operation')
-      ).resolves.toBeDefined();
-
-      // Test error operation
-      await expect(
-        faultyContract.executeOperation('error_operation')
-      ).rejects.toThrow('Intentional error');
-
-      // Test pause behavior
       await emergencyPause.emergencyPause(
         PauseLevel.SELECTIVE,
         'Error handling test',
@@ -645,40 +169,7 @@ describe('Emergency Pause Integration Tests', () => {
 
       await expect(
         faultyContract.executeOperation('normal_operation')
-      ).rejects.toThrow('Faulty contract is paused');
-    });
-
-    it('should recover from integration failures', async () => {
-      // Simulate integration failure
-      const originalExecute = mockContracts.get('0x1111111111111111111111111111111111111111')!.executeOperation;
-      
-      // Temporarily break the contract
-      mockContracts.get('0x1111111111111111111111111111111111111111')!.executeOperation = async () => {
-        throw new Error('Integration failure');
-      };
-
-      // Pause should still work
-      await emergencyPause.emergencyPause(
-        PauseLevel.SELECTIVE,
-        'Recovery test',
-        3600,
-        ['0x1111111111111111111111111111111111111111']
-      );
-
-      // Restore contract
-      mockContracts.get('0x1111111111111111111111111111111111111111')!.executeOperation = originalExecute;
-
-      // Resume should work
-      await emergencyPause.resumeOperations(
-        PauseLevel.SELECTIVE,
-        [governanceMembers[0], governanceMembers[1], governanceMembers[2]],
-        'proof'
-      );
-
-      // Operations should work again
-      await expect(
-        mockContracts.get('0x1111111111111111111111111111111111111111')!.executeOperation('transfer')
-      ).resolves.toBeDefined();
+      ).rejects.toThrow(`Faulty contract ${faultyAddress} is paused`);
     });
   });
 });

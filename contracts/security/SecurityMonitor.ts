@@ -71,6 +71,8 @@ export class SecurityMonitor implements ISecurityMonitor {
     this.complianceEngine = new ComplianceEngine();
     this.securityThresholds = new SecurityThresholds();
     this.anomalyThresholds = new AnomalyThresholds();
+    this.transactionHistory = new Map();
+    this.callHistory = new Map();
     this.initializeMonitoring();
   }
 

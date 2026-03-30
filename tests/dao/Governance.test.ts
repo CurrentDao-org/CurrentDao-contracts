@@ -11,18 +11,25 @@ describe('Governance Contract Tests', () => {
     const user2 = '0xUser2'; // Voter
     const user3 = '0xUser3'; // Voter
     const user4 = '0xUser4'; // Delegatee
-
     beforeEach(() => {
         token = new WattToken(admin);
         governance = new Governance(token, admin);
-        
+
         // Setup initial tokens
         token.grantMinterRole(admin, admin);
         token.grantBurnerRole(admin, admin);
         token.mint(admin, user1, 1000); // Proposer threshold is 100
-        token.mint(admin, user2, 100);  // 10 votes (QV)
-        token.mint(admin, user3, 400);  // 20 votes (QV)
+        token.mint(admin, user2, 500);
+        token.mint(admin, user3, 500);
         token.mint(admin, user4, 25);   // 5 votes (QV)
+
+        // Advance time to pass voting delay (mocking Date.now)
+        const realDateNow = Date.now;
+        jest.spyOn(global.Date, 'now').mockImplementation(() => realDateNow() + 2000);
+    });
+
+    afterEach(() => {
+        jest.restoreAllMocks();
     });
 
     it('should allow proposing if user has enough tokens', () => {

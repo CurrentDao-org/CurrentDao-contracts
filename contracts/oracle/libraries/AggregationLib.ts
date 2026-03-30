@@ -19,7 +19,7 @@ export class AggregationLib {
      */
     static calculateWeightedAverage(
         priceFeeds: Vec<PriceFeed>,
-        oracles: Map<Address, Oracle>
+        oracles: globalThis.Map<string, Oracle>
     ): AggregationResult {
         const result = new AggregationResult();
         
@@ -36,7 +36,7 @@ export class AggregationLib {
         // Single loop through feeds for validation and calculation
         for (let i = 0; i < priceFeeds.length; i++) {
             const feed = priceFeeds[i];
-            const oracle = (oracles as any)[feed.oracleId as string] || oracles.get?.(feed.oracleId);
+            const oracle = oracles.get(feed.oracleId as string);
             
             // Skip invalid feeds early to save gas
             if (!oracle?.isActive || !feed.isValid) {
@@ -74,7 +74,7 @@ export class AggregationLib {
         
         // Calculate standard deviation only if needed (gas optimization)
         if (validPrices.length > 1) {
-            result.standardDeviation = this.calculateStandardDeviationOptimized(validPrices, result.weightedPrice);
+            result.standardDeviation = this.calculateStandardDeviation(validPrices, result.weightedPrice);
         }
         
         result.isValid = true;
@@ -86,7 +86,7 @@ export class AggregationLib {
     /**
      * Gas optimized standard deviation calculation
      */
-    static calculateStandardDeviationOptimized(prices: Vec<u128>, mean: u128): u128 {
+    static calculateStandardDeviation(prices: Vec<u128>, mean: u128): u128 {
         if (prices.length <= 1) {
             return 0n;
         }
