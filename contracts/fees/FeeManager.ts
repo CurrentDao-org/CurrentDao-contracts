@@ -15,6 +15,7 @@ import {
     DEFAULT_FEE_DISTRIBUTION
 } from './structures/FeeStructure';
 import { FeeCalculation, FeeCalculationResult } from './libraries/FeeCalculation';
+import { IDynamicFeeSwitch } from './interfaces/IDynamicFeeSwitch';
 
 /**
  * Comprehensive fee management system implementing IFeeManager
@@ -49,8 +50,11 @@ export class FeeManager implements IFeeManager {
     public onNetworkCongestionUpdated?: (newLevel: number) => void;
     public onFeeStructureUpdated?: (transactionType: string, structure: FeeStructure) => void;
 
-    constructor(owner: string) {
+    private dynamicFeeSwitch?: IDynamicFeeSwitch;
+
+    constructor(owner: string, dynamicFeeSwitch?: IDynamicFeeSwitch) {
         this.owner = owner;
+        this.dynamicFeeSwitch = dynamicFeeSwitch;
         this.initializeDefaultStructures();
     }
 
@@ -257,7 +261,7 @@ export class FeeManager implements IFeeManager {
 
     // --- Dynamic fee adjustment ---
 
-    public setNetworkCongestionLevel(congestionLevel: number): void {
+    public setNetworkCongestionLevel(congestionLevel: number, congestionData?: NetworkCongestionData): void {
         this.requireOwner();
         
         if (congestionLevel < 0 || congestionLevel > 100) {
@@ -266,15 +270,25 @@ export class FeeManager implements IFeeManager {
 
         this.networkCongestionLevel = congestionLevel;
         
+        const now = Date.now();
+
         // Record in history
-        this.networkCongestionHistory.push({
-            level: congestionLevel,
-            timestamp: Date.now()
-        });
+        this.networkCongestionHistory.push(
+            congestionData ?? { level: congestionLevel, timestamp: now }
+        );
 
         // Keep only last 1000 records
         if (this.networkCongestionHistory.length > 1000) {
             this.networkCongestionHistory = this.networkCongestionHistory.slice(-1000);
+        }
+
+        // Forward to DynamicFeeSwitch if wired
+        if (this.dynamicFeeSwitch) {
+            this.dynamicFeeSwitch.updateNetworkConditions({
+                congestionLevel,
+                lastUpdatedTimestamp: now,
+                averageBlockTime: 12 // default block time in seconds
+            });
         }
 
         this.onNetworkCongestionUpdated?.(congestionLevel);
