@@ -6,7 +6,10 @@ import { IERC20 } from '../../scripts/IERC20';
 class MockToken implements IERC20 {
     public balances: Map<string, number> = new Map();
     public allowances: Map<string, number> = new Map();
-
+    
+    name(): Promise<string> { return Promise.resolve("Mock Token"); }
+    symbol(): Promise<string> { return Promise.resolve("MOCK"); }
+    decimals(): Promise<number> { return Promise.resolve(18); }
     totalSupply(): number { return 100000; }
     balanceOf(account: string): number { return this.balances.get(account) || 0; }
     
@@ -14,11 +17,8 @@ class MockToken implements IERC20 {
         return true;
     }
 
-    allowance(owner: string, spender: string): number {
-        return this.allowances.get(`${owner}_${spender}`) || 0;
-    }
-
     approve(spender: string, amount: number): boolean {
+        this.allowances.set(`${this.getOwner()}_${spender}`, amount);
         return true;
     }
 
@@ -28,6 +28,14 @@ class MockToken implements IERC20 {
         this.balances.set(sender, bal - amount);
         this.balances.set(recipient, (this.balances.get(recipient) || 0) + amount);
         return true;
+    }
+
+    allowance(owner: string, spender: string): number {
+        return this.allowances.get(`${owner}_${spender}`) || 0;
+    }
+    
+    private getOwner(): string {
+        return "0x0000000000000000000000000000000000000000001"; // Mock owner
     }
 
     executeTransfer(sender: string, recipient: string, amount: number): boolean {
