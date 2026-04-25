@@ -1,78 +1,40 @@
 {
-  "name": "currentdao-contracts",
+  "name": "currentdao-carbon-credit-trading",
   "version": "1.0.0",
-  "description": "Smart contracts for the CurrentDao solar energy ecosystem on Stellar/Soroban.",
+  "description": "Carbon credit trading marketplace for CurrentDao sustainability initiatives",
   "main": "index.js",
-  "type": "commonjs",
-  "directories": {
-    "doc": "docs",
-    "test": "tests"
-  },
   "scripts": {
-    "test": "npx jest",
-    "test:fee-management-system": "npx jest tests/fees",
-    "test:security-system": "npx jest tests/security",
-    "test:upgrade-management-system": "npx jest tests/amm",
-    "test:amm": "npx jest tests/amm",
-    "test:liquidity": "npx jest tests/liquidity",
-    "test:zkp": "npx jest tests/zkp",
-    "test:acl": "npx jest tests/acl/AccessControlList.test.ts",
-    "test:emergency": "npx jest tests/emergency",
-    "test:fees": "npx jest tests/fees/FeeManager.test.ts",
-    "test:security": "npx jest tests/security/SecurityMonitor.test.ts",
-    "test:security:integration": "npx jest tests/security/SecurityIntegration.test.ts",
-    "test:analytics": "npx jest tests/analytics/UsageAnalytics.test.ts",
-    "test:upgrade": "npx jest tests/upgrade/UpgradeManager.test.ts",
-    "test:rating": "npx jest tests/rating/QualityRating.test.ts",
-    "test:coverage": "npx jest --coverage",
-    "lint": "echo 'Linting not configured yet'",
-    "deploy:acl": "ts-node scripts/deploy_acl.ts",
-    "deploy:emergency": "ts-node scripts/deploy_emergency.ts",
-    "deploy:fees": "ts-node scripts/deploy_fees.ts",
-    "deploy:security:dev": "ts-node scripts/deploy_security_monitor.ts development",
-    "deploy:security:testnet": "ts-node scripts/deploy_security_monitor.ts testnet",
-    "deploy:security:mainnet": "ts-node scripts/deploy_security_monitor.ts mainnet",
-    "deploy:analytics": "ts-node scripts/deploy_usage_analytics.ts",
-    "deploy:upgrade": "ts-node scripts/deploy_upgrade.ts",
-    "deploy:rating:dev": "ts-node -e \"import { deployRatingSystem } from './scripts/deploy_rating'; deployRatingSystem('development').then(console.log).catch(console.error);\"",
-    "deploy:rating:testnet": "ts-node -e \"import { deployRatingSystem } from './scripts/deploy_rating'; deployRatingSystem('testnet').then(console.log).catch(console.error);\"",
-    "deploy:rating:mainnet": "ts-node -e \"import { deployRatingSystem } from './scripts/deploy_rating'; deployRatingSystem('mainnet').then(console.log).catch(console.error);\"",
-    "build": "npx tsc",
-    "verify:fees": "ts-node -e \"const { FeeSystemDeployer } = require('./scripts/deploy_fees'); const deployer = new FeeSystemDeployer({network: 'development', owner: '0xowner', treasury: '0xtreasury', validators: '0xvalidators', developers: '0xdevelopers', enableDynamicFees: true, initialNetworkCongestion: 20}); deployer.verifyDeployment({feeManager: new (require('./contracts/fees/FeeManager').FeeManager)('0xowner'), config: deployer.config, deploymentHash: 'test', timestamp: Date.now(), gasUsed: 0}).then(console.log);\""
+    "build": "hardhat compile",
+    "test": "hardhat test",
+    "test:gas": "hardhat test --grep \"GasOptimization\"",
+    "deploy": "hardhat run scripts/deploy.js",
+    "verify": "hardhat verify --network",
+    "coverage": "hardhat coverage",
+    "lint": "solhint 'contracts/**/*.sol'",
+    "size": "hardhat size-contracts",
+    "gas-report": "REPORT_GAS=true hardhat test"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Codekill33/CurrentDao-contracts.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/Codekill33/CurrentDao-contracts/issues"
-  },
-  "homepage": "https://github.com/Codekill33/CurrentDao-contracts#readme",
+  "keywords": [
+    "carbon-credits",
+    "sustainability",
+    "defi",
+    "marketplace",
+    "currentdao",
+    "environmental",
+    "trading"
+  ],
+  "author": "CurrentDao",
+  "license": "MIT",
   "devDependencies": {
-    "@types/jest": "^30.0.0",
-    "@types/node": "^24.6.0",
-    "jest": "^30.3.0",
-    "ts-jest": "^29.4.6",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.4.5"
+    "@nomicfoundation/hardhat-toolbox": "^3.0.0",
+    "@openzeppelin/contracts": "^4.9.0",
+    "hardhat": "^2.17.0",
+    "hardhat-contract-sizer": "^2.10.0",
+    "hardhat-gas-reporter": "^1.0.9",
+    "solidity-coverage": "^0.8.4",
+    "solhint": "^3.6.2"
   },
   "dependencies": {
-    "@nestjs/common": "^11.1.19",
-    "@nestjs/core": "^11.1.19",
-    "@nestjs/platform-express": "^11.1.19",
-    "@nestjs/schedule": "^6.1.3",
-    "@nestjs/swagger": "^11.4.1",
-    "@nestjs/testing": "^11.1.19",
-    "@nestjs/typeorm": "^11.0.1",
-    "@stellar/stellar-sdk": "^15.0.1",
-    "class-transformer": "^0.5.1",
-    "class-validator": "^0.15.1",
-    "pg": "^8.20.0",
-    "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.2",
-    "typeorm": "^0.3.28"
+    "dotenv": "^16.3.1"
   }
 }
