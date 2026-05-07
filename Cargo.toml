@@ -1,5 +1,20 @@
 [workspace]
-members = ["contracts/token", "contracts/dao"]
+members = [
+    "contracts/token",
+    "contracts/dao",
+    "contracts/carbon",
+    "contracts/staking",
+    "contracts/escrow",
+    "contracts/oracles",
+    "contracts/liquidity",
+    "contracts/settlement",
+    "contracts/fees",
+    "contracts/certificates",
+    "contracts/compliance",
+    "contracts/proposals",
+    "contracts/nft",
+    "contracts/reporting",
+]
 resolver = "2"
 
 [workspace.dependencies]
@@ -7,3 +22,4 @@ soroban-sdk = "25.0.0"
 
 [profile.release]
 opt-level = "z"
+overflow-checks = true
